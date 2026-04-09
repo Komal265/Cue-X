@@ -4,6 +4,7 @@ import { Upload, ArrowRight, BarChart3, Zap, Users, ShieldCheck, Cpu } from 'luc
 import { motion } from 'framer-motion';
 
 const Home = () => {
+  const API_URL = import.meta.env.VITE_API_URL || '';
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +17,7 @@ const Home = () => {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch('/upload', { method: 'POST', body: formData });
+      const response = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
       const data = await response.json();
       if (response.ok) {
         window.location.href = `/visualization/${data.session_id}`;

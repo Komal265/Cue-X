@@ -1,20 +1,37 @@
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, send_file
 import os
 import pandas as pd
-import numpy as np
 from datetime import datetime
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
 import joblib
-import json
+from flask_cors import CORS
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+CORS(app, origins=["https://cue-x.vercel.app"])
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Pre-load ML model and scaler once in global scope for efficiency
+model_path = os.path.join(BASE_DIR, "kmeans_model.joblib")
+scaler_path = os.path.join(BASE_DIR, "scaler.joblib")
+
+try:
+    kmeans_model = joblib.load(model_path)
+except Exception as e:
+    print("Model load failed:", e)
+    kmeans_model = None
+
+try:
+    scaler = joblib.load(scaler_path)
+except Exception as e:
+    print("Scaler load failed:", e)
+    scaler = None
 
 @app.route('/')
 def home():
-    return render_template("index.html")
+    return jsonify({"status": "API running"})
 
 
 @app.route('/upload', methods=['POST'])
@@ -26,12 +43,19 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    filename = f"{datetime.now().timestamp()}_{file.filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
     try:
         # Step 1: Load data
         customer_data = pd.read_csv(filepath)
+
+        # Validate columns
+        required_columns = ['Quantity','Price_Per_Item','Total_Price','Season','Purchase_Date']
+        for col in required_columns:
+            if col not in customer_data.columns:
+                return jsonify({'error': f'Missing column: {col}'}), 400
 
         # Step 2: Preprocessing
         season_mapping = {'Summer': 0, 'Winter': 1, 'Spring': 2, 'Autumn': 3, 'Monsoon': 4}
@@ -39,17 +63,21 @@ def upload_file():
         customer_data['Purchase_Date'] = pd.to_datetime(customer_data['Purchase_Date'])
         today = datetime.now()
         customer_data['Recency'] = (today - customer_data['Purchase_Date']).dt.days
-        customer_data['Avg_Order_Value'] = customer_data['Total_Price'] / customer_data['Quantity']
+        # Prevent division by zero
+        customer_data['Avg_Order_Value'] = customer_data['Total_Price'] / customer_data['Quantity'].replace(0, 1)
 
         features = ['Quantity','Price_Per_Item','Total_Price','Season_Number','Recency','Avg_Order_Value']
-        scaler = StandardScaler()
-        customer_data[features] = scaler.fit_transform(customer_data[features])
+        
+        if scaler is None:
+            return jsonify({'error': 'Scaler failed to load on the server'}), 500
+        customer_data[features] = scaler.transform(customer_data[features])
 
         X = customer_data[['Recency', 'Avg_Order_Value']].values
 
-        # Step 3: Load model
-        kmeans = joblib.load("kmeans_model.joblib")
-        Y = kmeans.predict(X)
+        # Step 3: Use global model
+        if kmeans_model is None:
+            return jsonify({'error': 'ML Model failed to load on the server'}), 500
+        Y = kmeans_model.predict(X)
 
         print("Y", Y)
         customer_data['Cluster_Label'] = Y
@@ -80,7 +108,8 @@ def upload_file():
         session_path = os.path.join(UPLOAD_FOLDER, f'session_{session_id}.csv')
         customer_data.to_csv(session_path, index=False)
 
-        download_url = '/download'
+        BASE_URL = "https://ml-miniproject-2kyl.onrender.com"
+        download_url = f"{BASE_URL}/download"
         return jsonify({
             'message': 'File processed successfully!', 
             'download_url': download_url,
@@ -98,9 +127,7 @@ def download_file():
         return send_file(output_path, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
 
-@app.route('/visualization/<session_id>')
-def visualization(session_id):
-    return render_template("visualization.html", session_id=session_id)
+
 
 @app.route('/api/segment-counts/<session_id>')
 def segment_counts(session_id):
@@ -191,4 +218,5 @@ def seasonal_distribution(session_id):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    PORT = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=PORT, debug=False)

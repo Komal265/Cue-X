@@ -33,6 +33,7 @@ const tooltipStyle = {
 };
 
 const Visualization = () => {
+  const API_URL = import.meta.env.VITE_API_URL || '';
   const { session_id } = useParams<{ session_id: string }>();
   const [segmentData, setSegmentData]   = useState<ChartData | null>(null);
   const [spendingData, setSpendingData] = useState<ChartData | null>(null);
@@ -44,10 +45,10 @@ const Visualization = () => {
     (async () => {
       try {
         const [segRes, spendRes, scatterRes, seasonalRes] = await Promise.all([
-          fetch(`/api/segment-counts/${session_id}`),
-          fetch(`/api/spending-by-segment/${session_id}`),
-          fetch(`/api/recency-value-scatter/${session_id}`),
-          fetch(`/api/seasonal-distribution/${session_id}`)
+          fetch(`${API_URL}/api/segment-counts/${session_id}`),
+          fetch(`${API_URL}/api/spending-by-segment/${session_id}`),
+          fetch(`${API_URL}/api/recency-value-scatter/${session_id}`),
+          fetch(`${API_URL}/api/seasonal-distribution/${session_id}`)
         ]);
         if (segRes.ok)      setSegmentData(await segRes.json());
         if (spendRes.ok)    setSpendingData(await spendRes.json());
@@ -121,7 +122,7 @@ const Visualization = () => {
           <button className="glass-premium px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all font-black text-xs tracking-widest uppercase">
             <Download className="w-4 h-4 text-purple-400" /> Download PDF
           </button>
-          <a href="/download" className="bg-blue-600 hover:bg-blue-500 px-8 py-4 rounded-2xl flex items-center gap-3 transition-all font-black text-xs tracking-widest uppercase shadow-[0_0_30px_rgba(37,99,235,0.3)] active:scale-95">
+          <a href={`${API_URL}/download`} className="bg-blue-600 hover:bg-blue-500 px-8 py-4 rounded-2xl flex items-center gap-3 transition-all font-black text-xs tracking-widest uppercase shadow-[0_0_30px_rgba(37,99,235,0.3)] active:scale-95">
             <Download className="w-4 h-4" /> Export Schema
           </a>
         </div>
