@@ -19,6 +19,8 @@
 [![Scikit-Learn](https://img.shields.io/badge/scikit--learn-KMeans-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 
+### 🚀 **[LIVE DEMO](https://cue-x.vercel.app/)** 🚀
+
 </div>
 
 ---
@@ -42,6 +44,28 @@
 | 📥 **Export Results** | Download the fully enriched & labelled dataset as a CSV |
 | ⚡ **High-Performance Frontend** | React 19 + Vite 8 + TailwindCSS 4 – ultra-fast, glassmorphic UI |
 | 🌐 **REST API Backend** | Flask REST endpoints powering all chart data in real-time |
+
+---
+
+## ✦ Try It Now!
+
+### 🌐 Live Application
+**Visit:** [https://cue-x.vercel.app/](https://cue-x.vercel.app/)
+
+### 📊 Testing Dataset
+Download the sample dataset to test the application:
+- **File:** `StyleSense_Dataset_updated.csv`
+- **Size:** ~220KB
+- **Records:** 1000+ customer transactions
+- **[Download Dataset](https://github.com/your-username/cue-x/blob/main/StyleSense_Dataset_updated.csv)**
+
+### 🎯 Quick Test Steps
+1. Visit [https://cue-x.vercel.app/](https://cue-x.vercel.app/)
+2. Download the `StyleSense_Dataset_updated.csv` file
+3. Click "Upload CSV" and select the dataset
+4. Watch as the ML model segments your customers in real-time
+5. Explore the interactive dashboard with charts and insights
+6. Download the enriched results with segment labels
 
 ---
 
@@ -76,6 +100,7 @@
 | Data Processing | Pandas, NumPy |
 | Model Serialisation | Joblib |
 | Production Server | Gunicorn |
+| Deployment | Vercel (Serverless) |
 
 ### Frontend
 | Layer | Technology |
@@ -87,6 +112,7 @@
 | Animation | Framer Motion + GSAP |
 | 3D Engine | Three.js |
 | Routing | React Router DOM 7 |
+| Deployment | Vercel |
 
 ---
 
@@ -98,8 +124,10 @@ cue-x/
 ├── 📄 app.py                      # Flask REST API & ML pipeline
 ├── 📄 requirements.txt            # Python dependencies
 ├── 📄 Procfile                    # Heroku deployment config
+├── 📄 vercel.json                 # Vercel deployment config
 ├── 🤖 kmeans_model.joblib         # Pre-trained K-Means model
-├── 📊 StyleSense_Dataset.csv      # Source dataset
+├── 📊 StyleSense_Dataset.csv      # Source dataset (original)
+├── 📊 StyleSense_Dataset_updated.csv  # Testing dataset (extended)
 ├── 📓 kmeans.ipynb                # Model training notebook
 │
 ├── 📁 uploads/                    # Temp storage for uploaded files
@@ -196,17 +224,29 @@ npm run dev
 Your dataset must include the following columns:
 
 ```
-Customer_ID | Purchase_Date | Season | Quantity | Price_Per_Item | Total_Price
+Customer_ID | Customer_Name | Email | Product | Quantity | Price_Per_Item | Total_Price | Purchase_Date | Season
 ```
 
 | Column | Type | Example |
 |---|---|---|
-| `Customer_ID` | string/int | `C1042` |
-| `Purchase_Date` | `YYYY-MM-DD` | `2024-03-15` |
-| `Season` | string | `Summer`, `Winter`, `Monsoon`, `Spring`, `Autumn` |
-| `Quantity` | int | `3` |
-| `Price_Per_Item` | float | `499.00` |
-| `Total_Price` | float | `1497.00` |
+| `Customer_ID` | int | `1` |
+| `Customer_Name` | string | `Michelle Harris` |
+| `Email` | string | `customer@example.com` |
+| `Product` | string | `Sneakers` |
+| `Quantity` | int | `5` |
+| `Price_Per_Item` | float | `3148.00` |
+| `Total_Price` | float | `15740.00` |
+| `Purchase_Date` | `YYYY-MM-DD` | `2024-04-23` |
+| `Season` | string | `Spring`, `Summer`, `Monsoon`, `Autumn`, `Winter` |
+
+### Sample Data Preview
+
+```csv
+Customer_ID,Customer_Name,Email,Product,Quantity,Price_Per_Item,Total_Price,Purchase_Date,Season
+1,Michelle Harris,zbarrett@jordan-thomas.com,Sneakers,5,3148,15740,2024-04-23,Spring
+2,Leah Lee,rroberson@morales.org,Loafers,3,2049,6147,2024-11-04,Autumn
+3,Sheri Espinoza,maria11@yahoo.com,Sandals,2,2649,5298,2024-06-17,Summer
+```
 
 ---
 
@@ -241,7 +281,20 @@ Customer_ID | Purchase_Date | Season | Quantity | Price_Per_Item | Total_Price
 
 ## ✦ Deployment
 
-### Heroku
+### Vercel (Current Deployment)
+
+The application is currently deployed on Vercel at [https://cue-x.vercel.app/](https://cue-x.vercel.app/)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Login and deploy
+vercel login
+vercel --prod
+```
+
+### Heroku (Alternative)
 
 ```bash
 # Login and create app
@@ -269,6 +322,26 @@ FLASK_ENV=development
 FLASK_DEBUG=1
 SECRET_KEY=your-secret-key-here
 ```
+
+---
+
+## ✦ Dataset Information
+
+### Testing Dataset Specifications
+- **Filename:** `StyleSense_Dataset_updated.csv`
+- **Size:** ~220KB
+- **Total Records:** 1000+ customer transactions
+- **Date Range:** 2023-01-24 to 2024-11-04
+- **Product Categories:** Fashion & Apparel (Sneakers, Loafers, Sandals, Blazers, Jackets, etc.)
+- **Seasons:** Spring, Summer, Monsoon, Autumn, Winter
+- **Price Range:** ₹632 - ₹19,044
+
+### Expected Segmentation Results
+When you upload the testing dataset, the ML model will classify customers into:
+- **Segment 0:** ~25% of customers (Low-Value Frequent Buyers)
+- **Segment 1:** ~20% of customers (High-Value Loyal Customers)
+- **Segment 2:** ~30% of customers (Lost Customers)
+- **Segment 3:** ~25% of customers (Seasonal Buyers)
 
 ---
 
@@ -313,6 +386,7 @@ Software.
 - **GSAP + Framer Motion** — for buttery-smooth animations
 - **Three.js** — for the immersive 3D hero experience
 - **Vite** — for the blazing-fast developer experience
+- **Vercel** — for seamless deployment and hosting
 
 ---
 
@@ -324,5 +398,7 @@ Segment Smarter · Market Sharper
 ```
 
 **⭐ Star this repo if CUE-X helped your project!**
+
+**🌐 [Try the Live Demo](https://cue-x.vercel.app/)**
 
 </div>
