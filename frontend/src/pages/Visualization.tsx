@@ -301,6 +301,54 @@ const Visualization = () => {
         </div>
       </main>
 
+      {/* Actionable Strategies Section */}
+      <section className="relative z-10 space-y-6 pt-8 pb-12">
+        <div className="space-y-2">
+          <h3 className="text-2xl font-black tracking-tight uppercase tracking-wider text-gray-400">Execution</h3>
+          <h2 className="text-4xl font-black">Segment Strategies</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {pieData.map((segment, idx) => {
+            let strategy = "Maintain regular engagement with personalized content and standard promotional offers.";
+            const name = segment.name.toLowerCase();
+            if (name.includes('high') || name.includes('vip') || name.includes('champion') || name.includes('rich') || name.includes('whale') || name.includes('power')) {
+              strategy = "Provide VIP perks, early access to new collections, and dedicated account management to retain high value.";
+            } else if (name.includes('low') || name.includes('risk') || name.includes('churn') || name.includes('lost') || name.includes('dormant') || name.includes('inactive')) {
+              strategy = "Deploy aggressive win-back campaigns, high-value discount codes, and surveys to understand dissatisfaction.";
+            } else if (name.includes('new') || name.includes('promising') || name.includes('recent') || name.includes('potential')) {
+              strategy = "Trigger welcome automation sequence, offer first-time buyer discounts, and highlight popular products.";
+            } else if (name.includes('loyal') || name.includes('frequent') || name.includes('regular') || name.includes('core')) {
+              strategy = "Upsell complementary products, offer referral bonuses, and ask for product reviews.";
+            }
+            
+            return (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}
+                whileHover={{ y: -5 }}
+                className="glass-card p-8 rounded-3xl relative overflow-hidden group cursor-pointer"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-[50px] opacity-20 pointer-events-none transition-opacity group-hover:opacity-40" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                <div className="w-10 h-10 rounded-xl mb-6 flex items-center justify-center shadow-lg" style={{ backgroundColor: `${COLORS[idx % COLORS.length]}20`, border: `1px solid ${COLORS[idx % COLORS.length]}40` }}>
+                  <Target className="w-5 h-5" style={{ color: COLORS[idx % COLORS.length] }} />
+                </div>
+                <h3 className="text-xl font-black mb-3 text-white">{segment.name}</h3>
+                <p className="text-sm text-gray-400 leading-relaxed font-medium">
+                  {strategy}
+                </p>
+                <div className="mt-8 pt-4 border-t border-white/5 flex justify-between items-center text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <span className="flex items-center gap-2">
+                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                     {parseInt(segment.value.toString()).toLocaleString()} Users
+                  </span>
+                  <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Take Action &rarr;</span>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </section>
+
       <footer className="mt-16 py-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6 text-gray-500 text-[10px] font-black tracking-widest uppercase">
         <div className="flex items-center gap-4">
           <Link to="/" className="hover:text-blue-400 transition-colors">Documentation</Link>
