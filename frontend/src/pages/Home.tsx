@@ -32,51 +32,52 @@ const Home = () => {
   };
 
   return (
-    <div className="bg-[#050508] text-white selection:bg-blue-500/30 min-h-screen">
+    <div className="text-white selection:bg-white/20 min-h-screen relative">
 
       {/* ── 3D Horizon Landing (scrollable) ── */}
       <HorizonHeroSection />
 
       {/* ── Upload & Features Section ── */}
-      <section className="relative z-20 py-24 px-6 md:px-12">
+      <section className="relative z-20 py-24 px-6 md:px-12 border-t border-neutral-800/50">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-16 items-center">
 
             {/* Left — description + feature cards */}
             <motion.div
-              initial={{ opacity: 0, x: -30 }}
+              initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
               className="space-y-8"
             >
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-neutral-800 bg-[#111] text-neutral-400 text-sm font-medium">
                 <Zap className="w-4 h-4" />
-                <span>Next-Gen Analytics Engine</span>
+                <span>Precision Analytics Engine</span>
               </div>
 
-              <h2 className="text-5xl md:text-6xl font-bold tracking-tight leading-tight">
+              <h2 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight text-white">
                 Understand Your <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">
+                <span className="text-neutral-400">
                   Customers
-                </span>{' '}
-                Deeply
+                </span> Deeply
               </h2>
 
-              <p className="text-xl text-gray-400 font-light leading-relaxed">
-                Leverage the power of CUE-X to segment your user base into actionable groups.
-                Identify patterns that drive personalized recommendations and targeted business
-                strategies with mathematical precision.
+              <p className="text-lg text-neutral-500 font-medium leading-relaxed max-w-lg">
+                Leverage CUE-X to segment your user base into actionable cohorts.
+                Identify lifecycle patterns to drive highly targeted business
+                strategies with precision.
               </p>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-4">
                 {[
-                  { icon: Users, label: 'Automated Segmentation', desc: 'Identify key customer groups instantly' },
-                  { icon: BarChart3, label: 'Advanced Insights', desc: 'Visualize purchase patterns and trends' },
+                  { icon: Users, label: 'Automated Cohorts', desc: 'Identify key customer groups instantly' },
+                  { icon: BarChart3, label: 'Deep Insights', desc: 'Visualize purchase patterns and vectors' },
                 ].map((feature, i) => (
-                  <div key={i} className="glass-card p-6 rounded-2xl space-y-3">
-                    <feature.icon className="w-8 h-8 text-blue-400" />
-                    <h3 className="font-bold">{feature.label}</h3>
-                    <p className="text-sm text-gray-500 leading-relaxed">{feature.desc}</p>
+                  <div key={i} className="glass-card p-6 rounded-2xl flex flex-col gap-3">
+                    <feature.icon className="w-5 h-5 text-neutral-400" />
+                    <div>
+                      <h3 className="font-semibold text-white text-sm mb-1">{feature.label}</h3>
+                      <p className="text-sm text-neutral-500 leading-relaxed font-medium">{feature.desc}</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -84,69 +85,65 @@ const Home = () => {
 
             {/* Right — upload form */}
             <motion.div
-              initial={{ opacity: 0, x: 30 }}
+              initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
-              className="glass p-1 rounded-[2.5rem] border-white/5 shadow-2xl relative overflow-hidden group"
+              className="glass-card p-8 md:p-10 rounded-[2rem] border-neutral-800 relative overflow-hidden"
             >
-              <div className="bg-[#0a0a0f] p-10 rounded-[2.4rem] space-y-8 relative z-10">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 blur-[100px] -mr-32 -mt-32 rounded-full" />
+              <div className="relative z-10 space-y-8 text-center">
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-semibold tracking-tight text-white">Start Analysis</h3>
+                  <p className="text-sm font-medium text-neutral-500">Upload your customer dataset (CSV) to begin</p>
+                </div>
 
-                <div className="relative z-10 space-y-8 text-center">
-                  <div className="space-y-2">
-                    <h3 className="text-3xl font-black tracking-tight">Start Analysis</h3>
-                    <p className="text-gray-400">Upload your customer data (CSV) to begin</p>
-                  </div>
-
-                  <form onSubmit={handleUpload} className="space-y-6">
-                    <label className="block">
-                      <div className="border-2 border-dashed border-white/10 hover:border-blue-500/40 transition-colors p-10 rounded-3xl flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 group">
-                        <div className="w-20 h-20 rounded-2xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <Upload className="w-10 h-10 text-blue-400" />
-                        </div>
-                        <div className="text-center">
-                          <p className="text-lg font-bold">{file ? file.name : 'Select CSV File'}</p>
-                          <p className="text-sm text-gray-500 mt-1">Drag and drop or click to browse</p>
-                        </div>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".csv"
-                          onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        />
+                <form onSubmit={handleUpload} className="space-y-6">
+                  <label className="block">
+                    <div className="border border-dashed border-neutral-700 hover:border-neutral-500 transition-colors p-8 rounded-xl flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 group bg-white/5">
+                      <div className="w-12 h-12 rounded-lg bg-neutral-900/50 border border-neutral-800 flex items-center justify-center backdrop-blur-md">
+                        <Upload className="w-5 h-5 text-neutral-400 group-hover:text-white transition-colors" />
                       </div>
-                    </label>
-
-                    {error && (
-                      <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                        {error}
+                      <div className="text-center">
+                        <p className="font-medium text-white">{file ? file.name : 'Select CSV File'}</p>
+                        <p className="text-sm text-neutral-500 mt-1 font-medium">Drag and drop or click to browse</p>
                       </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".csv"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                  </label>
+
+                  {error && (
+                    <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-medium">
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    disabled={!file || isLoading}
+                    className="w-full h-14 bg-white hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] text-sm"
+                  >
+                    {isLoading ? (
+                      <div className="w-5 h-5 border-2 border-neutral-400 border-t-black rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        Analyze Workspace
+                        <ArrowRight className="w-4 h-4" />
+                      </>
                     )}
+                  </button>
+                </form>
 
-                    <button
-                      disabled={!file || isLoading}
-                      className="w-full h-16 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-2xl flex items-center justify-center gap-4 transition-all active:scale-[0.98] shadow-lg shadow-blue-600/30 text-lg"
-                    >
-                      {isLoading ? (
-                        <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          Analyze Now
-                          <ArrowRight className="w-5 h-5" />
-                        </>
-                      )}
-                    </button>
-                  </form>
-
-                  <div className="pt-8 border-t border-white/5 flex items-center justify-center gap-8 text-[10px] text-gray-500 font-black tracking-[0.2em] uppercase">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                      <span>Encrypted</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Cpu className="w-4 h-4 text-blue-500" />
-                      <span>X-Engine Core</span>
-                    </div>
+                <div className="pt-6 border-t border-neutral-900 flex items-center justify-center gap-6 text-[11px] text-neutral-500 font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>End-to-End Encrypted</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>X-Engine Core Processing</span>
                   </div>
                 </div>
               </div>
@@ -155,8 +152,8 @@ const Home = () => {
         </div>
       </section>
 
-      <footer className="py-12 px-6 border-t border-white/5 text-center text-gray-500 text-sm font-medium">
-        <p>© 2024 CUE-X Analytics Engine. High-Performance Customer Segmentation.</p>
+      <footer className="relative z-20 py-12 border-t border-neutral-800/50 text-center text-neutral-500 text-xs font-medium">
+        <p>© 2024 CUE-X Analytics Engine. High-Performance Enterprise Segmentation.</p>
       </footer>
     </div>
   );
