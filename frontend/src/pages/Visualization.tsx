@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, AreaChart, Area, Legend
 } from 'recharts';
 import {
-  ArrowLeft, Download, TrendingUp, Calendar, Zap,
+  ArrowLeft, Download, TrendingUp, Zap,
   Users, Target
 } from 'lucide-react';
 import { motion } from 'framer-motion';

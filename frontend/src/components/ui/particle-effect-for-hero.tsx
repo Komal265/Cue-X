@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 // --- Types ---
 
@@ -48,7 +48,7 @@ const randomRange = (min: number, max: number) => Math.random() * (max - min) + 
 export const AntiGravityCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [debugInfo, setDebugInfo] = useState({ count: 0, fps: 0 });
+
   
   // Mutable state refs to avoid re-renders during animation loop
   const particlesRef = useRef<Particle[]>([]);
@@ -98,7 +98,6 @@ export const AntiGravityCanvas: React.FC = () => {
     }
     backgroundParticlesRef.current = newBgParticles;
 
-    setDebugInfo(prev => ({ ...prev, count: particleCount + bgCount }));
   }, []);
 
   // Animation Loop
@@ -111,9 +110,7 @@ export const AntiGravityCanvas: React.FC = () => {
     // Calculate Delta Time for smooth animation (optional, but good for FPS calculation)
     const delta = time - lastTimeRef.current;
     lastTimeRef.current = time;
-    if (delta > 0) {
-        setDebugInfo(prev => ({ ...prev, fps: Math.round(1000 / delta) }));
-    }
+    void delta; // delta tracked for timing but fps display removed
 
     // Clear Canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
