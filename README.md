@@ -29,7 +29,7 @@
 
 **CUE-X** is a full-stack, AI-powered **Customer Segmentation Platform** that transforms raw purchase data into actionable marketing intelligence. Upload a customer dataset, let the ML engine cluster your audience, and explore a real-time interactive dashboard that tells the story behind your data.
 
-> _"Know your customers.Own your market."_
+> _"Know your customers-Own your market."_
 
 ---
 
