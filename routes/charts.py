@@ -1,15 +1,26 @@
 from flask import Blueprint, jsonify
 import pandas as pd
 from database import get_connection, text
+from utils.auth import login_required
 
 charts_bp = Blueprint('charts', __name__)
 
-def get_customers_df(dataset_id):
-    """Helper to fetch customers from DB and return a DataFrame."""
+def get_customers_df(dataset_id, user_id):
+    """Helper to fetch customers from DB and return a DataFrame, ensuring ownership."""
     with get_connection() as conn:
         if conn is None:
             return None, "Database connection failed"
         try:
+            # Check ownership via workspace
+            res = conn.execute(text("""
+                SELECT d.id FROM datasets d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.id = :id AND w.user_id = :user_id
+            """), {"id": dataset_id, "user_id": user_id}).fetchone()
+            
+            if not res:
+                return None, "Dataset not found or unauthorized"
+
             result = conn.execute(
                 text("SELECT * FROM customers WHERE dataset_id = :id"),
                 {"id": dataset_id}
@@ -23,8 +34,9 @@ def get_customers_df(dataset_id):
 
 # ── Segment Counts ────────────────────────────────────────────────────────────
 @charts_bp.route('/api/segment-counts/<int:dataset_id>')
-def segment_counts(dataset_id):
-    df, err = get_customers_df(dataset_id)
+@login_required
+def segment_counts(user_id, dataset_id):
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
@@ -36,8 +48,9 @@ def segment_counts(dataset_id):
 
 # ── Spending by Segment ───────────────────────────────────────────────────────
 @charts_bp.route('/api/spending-by-segment/<int:dataset_id>')
-def spending_by_segment(dataset_id):
-    df, err = get_customers_df(dataset_id)
+@login_required
+def spending_by_segment(user_id, dataset_id):
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
@@ -49,8 +62,9 @@ def spending_by_segment(dataset_id):
 
 # ── Recency / Monetary Scatter ────────────────────────────────────────────────
 @charts_bp.route('/api/recency-value-scatter/<int:dataset_id>')
-def recency_value_scatter(dataset_id):
-    df, err = get_customers_df(dataset_id)
+@login_required
+def recency_value_scatter(user_id, dataset_id):
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
@@ -68,8 +82,9 @@ def recency_value_scatter(dataset_id):
 
 # ── Seasonal Distribution ─────────────────────────────────────────────────────
 @charts_bp.route('/api/seasonal-distribution/<int:dataset_id>')
-def seasonal_distribution(dataset_id):
-    df, err = get_customers_df(dataset_id)
+@login_required
+def seasonal_distribution(user_id, dataset_id):
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
@@ -87,8 +102,9 @@ def seasonal_distribution(dataset_id):
 
 # ── RFM Scores per Segment (heatmap data) ─────────────────────────────────────
 @charts_bp.route('/api/rfm-scores/<int:dataset_id>')
-def rfm_scores(dataset_id):
-    df, err = get_customers_df(dataset_id)
+@login_required
+def rfm_scores(user_id, dataset_id):
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:

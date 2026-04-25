@@ -8,15 +8,26 @@ from services.gemini_service import gemini_client, gemini_generate
 from services.ml_service import rfm_segment_map
 
 from database import get_connection, text
+from utils.auth import login_required
 
 ai_bp = Blueprint('ai', __name__)
 
-def get_customers_df(dataset_id):
-    """Helper to fetch customers from DB and return a DataFrame."""
+def get_customers_df(dataset_id, user_id):
+    """Helper to fetch customers from DB and return a DataFrame, ensuring ownership."""
     with get_connection() as conn:
         if conn is None:
             return None, "Database connection failed"
         try:
+            # Check ownership
+            res = conn.execute(text("""
+                SELECT d.id FROM datasets d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.id = :id AND w.user_id = :user_id
+            """), {"id": dataset_id, "user_id": user_id}).fetchone()
+            
+            if not res:
+                return None, "Dataset not found or unauthorized"
+
             result = conn.execute(
                 text("SELECT customer_id as \"Customer_ID\", recency as \"Recency\", frequency as \"Frequency\", monetary as \"Monetary\", segment_label as \"Segment_Name\", season as \"Season\", cluster_id as \"Cluster\" FROM customers WHERE dataset_id = :id"),
                 {"id": dataset_id}
@@ -30,7 +41,8 @@ def get_customers_df(dataset_id):
 
 # ── RAG Chat — Ask Your Data ──────────────────────────────────────────────────
 @ai_bp.route('/api/chat', methods=['POST'])
-def chat_query():
+@login_required
+def chat_query(user_id):
     body       = request.get_json(silent=True) or {}
     dataset_id = body.get('dataset_id')
     question   = body.get('question', '').strip()
@@ -40,7 +52,7 @@ def chat_query():
     if not dataset_id:
         return jsonify({'error': 'Dataset ID is required'}), 400
 
-    per_customer, err = get_customers_df(dataset_id)
+    per_customer, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
 
@@ -299,8 +311,9 @@ Include specific numbers. Do not mention code, pandas, or dataframes."""
 
 # ── Executive Summary ─────────────────────────────────────────────────────────
 @ai_bp.route('/api/executive-summary/<int:dataset_id>')
-def executive_summary(dataset_id):
-    per_customer, err = get_customers_df(dataset_id)
+@login_required
+def executive_summary(user_id, dataset_id):
+    per_customer, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
 
@@ -477,7 +490,8 @@ Return only the sentence."""
 strategy_cache: dict = {}
 
 @ai_bp.route('/api/strategy/<int:dataset_id>/<int:segment_id>')
-def strategy_agent(dataset_id, segment_id):
+@login_required
+def strategy_agent(user_id, dataset_id, segment_id):
     if segment_id not in range(4):
         return jsonify({'success': False, 'error': 'invalid_segment'}), 400
 
@@ -485,7 +499,7 @@ def strategy_agent(dataset_id, segment_id):
     if cache_key in strategy_cache:
         return jsonify({'success': True, 'strategy': strategy_cache[cache_key]})
 
-    df, err = get_customers_df(dataset_id)
+    df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
 

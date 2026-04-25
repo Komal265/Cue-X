@@ -1,25 +1,28 @@
 from flask import Blueprint, request, jsonify
 from database import get_connection
 from models import insert_workspace, get_workspaces, get_datasets_by_workspace, text, serialize_datetime
+from utils.auth import login_required
 
 workspace_bp = Blueprint("workspaces", __name__, url_prefix="/api/workspaces")
 
 @workspace_bp.route("", methods=["GET"])
-def get_workspaces_route():
+@login_required
+def get_workspaces_route(user_id):
     print("GET /api/workspaces called")
     try:
         with get_connection() as conn:
             if conn is None:
                 return jsonify({"error": "Database connection failed"}), 500
-            # Use helper from models.py which includes created_at and formats it
-            workspaces = get_workspaces(conn)
+            # Use helper from models.py which filters by user_id
+            workspaces = get_workspaces(conn, user_id)
             return jsonify(workspaces)
     except Exception as e:
         print(f"Error in GET /api/workspaces: {e}")
         return jsonify({"error": str(e)}), 500
 
 @workspace_bp.route("", methods=["POST"])
-def create_workspace():
+@login_required
+def create_workspace(user_id):
     try:
         data = request.get_json()
         print("POST /api/workspaces", data)
@@ -31,12 +34,9 @@ def create_workspace():
             if conn is None:
                 return jsonify({"error": "Database connection failed"}), 500
             
-            # Using RETURNING id for PostgreSQL
-            result = conn.execute(
-                text("INSERT INTO workspaces (name) VALUES (:name) RETURNING id"),
-                {"name": name}
-            )
-            workspace_id = result.fetchone()[0]
+            workspace_id = insert_workspace(conn, name, user_id)
+            if not workspace_id:
+                return jsonify({"error": "Failed to create workspace"}), 500
             conn.commit() # Ensure commit for non-autocommit engines
 
             return jsonify({"workspace_id": workspace_id})
@@ -45,12 +45,18 @@ def create_workspace():
         return jsonify({"error": str(e)}), 500
 
 @workspace_bp.route('/<int:workspace_id>/datasets', methods=['GET'])
-def list_datasets(workspace_id):
+@login_required
+def list_datasets(user_id, workspace_id):
     print(f"Fetching datasets for workspace {workspace_id}")
     with get_connection() as conn:
         if conn is None:
             return jsonify({'error': 'Database connection failed'}), 500
         try:
+            # First check if the workspace belongs to the user
+            ws = conn.execute(text("SELECT id FROM workspaces WHERE id = :id AND user_id = :user_id"), {"id": workspace_id, "user_id": user_id}).fetchone()
+            if not ws:
+                return jsonify({'error': 'Workspace not found or unauthorized'}), 403
+                
             datasets = get_datasets_by_workspace(conn, workspace_id)
             return jsonify(datasets)
         except Exception as e:
@@ -58,16 +64,23 @@ def list_datasets(workspace_id):
             return jsonify({'error': str(e)}), 500
 
 @workspace_bp.route('/dataset/<int:dataset_id>', methods=['GET'])
-def get_dataset_summary(dataset_id):
+@login_required
+def get_dataset_summary(user_id, dataset_id):
     print(f"Fetching summary for dataset {dataset_id}")
     with get_connection() as conn:
         if conn is None:
             return jsonify({'error': 'Database connection failed'}), 500
         try:
-            # Get basic info
-            res = conn.execute(text("SELECT id, filename, uploaded_at, row_count, workspace_id FROM datasets WHERE id = :id"), {"id": dataset_id}).fetchone()
+            # Check ownership via workspace
+            res = conn.execute(text("""
+                SELECT d.id, d.filename, d.uploaded_at, d.row_count, d.workspace_id 
+                FROM datasets d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.id = :id AND w.user_id = :user_id
+            """), {"id": dataset_id, "user_id": user_id}).fetchone()
+            
             if not res:
-                return jsonify({'error': 'Dataset not found'}), 404
+                return jsonify({'error': 'Dataset not found or unauthorized'}), 404
             
             dataset = dict(res._mapping)
             if 'uploaded_at' in dataset:

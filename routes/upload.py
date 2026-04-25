@@ -4,11 +4,13 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
+from sqlalchemy import text
 from services.ml_service import rfm_model, rfm_scaler, rfm_segment_map
 from services.session_store import UPLOAD_FOLDER, load_session
 from config import BASE_URL
 from database import get_connection
 from models import insert_dataset, insert_customers, insert_model_metadata
+from utils.auth import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +23,26 @@ def home():
 
 # ── Upload & Segment ──────────────────────────────────────────────────────────
 @upload_bp.route('/upload', methods=['POST'])
-def upload_file():
+@login_required
+def upload_file(user_id):
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
+
+    workspace_id = request.form.get('workspace_id')
+    if not workspace_id:
+        return jsonify({'error': 'workspace_id is required'}), 400
+
+    # Verify workspace belongs to user
+    with get_connection() as conn:
+        if conn is None:
+             return jsonify({'error': 'Database connection failed'}), 500
+        ws = conn.execute(text("SELECT id FROM workspaces WHERE id = :id AND user_id = :user_id"), {"id": workspace_id, "user_id": user_id}).fetchone()
+        if not ws:
+            return jsonify({'error': 'Workspace not found or unauthorized'}), 403
 
     filename  = f"{datetime.now().timestamp()}_{file.filename}"
     filepath  = os.path.join(UPLOAD_FOLDER, filename)
@@ -104,7 +119,6 @@ def upload_file():
 
         # ── Step 8: Persist to PostgreSQL (non-blocking) ──────────────────────
         dataset_id = None
-        workspace_id = request.form.get('workspace_id')
         
         try:
             # Silhouette score — measures cluster quality (−1 to 1, higher is better)
@@ -153,7 +167,9 @@ def upload_file():
 
 # ── Download ─────────────────────────────────────────────────────────────────
 @upload_bp.route('/download')
-def download_file():
+@login_required
+def download_file(user_id):
+    # TODO: Could restrict download based on ownership
     output_path = os.path.join(UPLOAD_FOLDER, 'output.csv')
     if os.path.exists(output_path):
         return send_file(output_path, as_attachment=True)
