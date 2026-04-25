@@ -207,6 +207,54 @@ npm run dev
 
 ---
 
+## 🗄️ Database Setup (PostgreSQL)
+
+CUE-X uses PostgreSQL to persist all customer segmentation data. Follow these simple steps to set up the database locally:
+
+### 1. Install PostgreSQL
+* Make sure PostgreSQL is installed on your computer.
+* You can download the official installer here: [https://www.postgresql.org/download/](https://www.postgresql.org/download/)
+
+### 2. Create the Database
+* Open **pgAdmin** (which comes with the PostgreSQL installation).
+* Create a new database and name it exactly: `cuex_db`
+
+### 3. Configure Environment Variables
+Create a `.env` file in the root directory of the project and add your database connection string:
+
+```env
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/cuex_db
+```
+
+* Replace `YOUR_PASSWORD` with the password you set during the PostgreSQL installation.
+* The default port is `5432`. If you changed it, update it in the URL.
+
+### 4. Initialize Tables
+You do not need to create tables manually! The tables will be auto-created for you when you start the backend server.
+Simply run the backend application:
+
+```bash
+python app.py
+```
+
+### 5. Verify Setup
+To check if everything is working correctly, upload a CSV dataset in the app, then run these SQL queries in pgAdmin:
+
+```sql
+SELECT * FROM datasets;
+SELECT COUNT(*) FROM customers;
+SELECT * FROM models_used;
+```
+
+### Troubleshooting
+If the backend cannot connect to the database, check these common issues:
+* **PostgreSQL not running:** Make sure the PostgreSQL service is active on your computer.
+* **Wrong password:** Double-check that `YOUR_PASSWORD` inside your `.env` file is exactly correct.
+* **Port mismatch:** Make sure PostgreSQL is actually running on port `5432`.
+* **psycopg2 not installed:** Make sure you ran `pip install -r requirements.txt` to install the required Python database drivers.
+
+---
+
 ## ✦ API Reference
 
 | Method | Endpoint | Description |
