@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Briefcase, Plus, Check } from 'lucide-react';
+import { fetchWithAuth } from '../utils/api';
 
 interface Workspace {
   id: number;
@@ -17,13 +18,14 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
   const [isCreating, setIsCreating] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const API_URL = import.meta.env.VITE_API_URL;
 
   const fetchWorkspaces = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/workspaces`);
-      const data = await res.json();
-      if (Array.isArray(data)) setWorkspaces(data);
+      const res = await fetchWithAuth('/api/workspaces');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setWorkspaces(data);
+      }
     } catch (err) {
       console.error("Failed to fetch workspaces", err);
     }
@@ -39,7 +41,7 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
     
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/workspaces`, {
+      const res = await fetchWithAuth('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newWorkspaceName })
@@ -49,6 +51,7 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
         setNewWorkspaceName('');
         setIsCreating(false);
         await fetchWorkspaces();
+        // The backend responds with { workspace_id: 123 }
         onWorkspaceSelect(data.workspace_id);
       }
     } catch (err) {
@@ -124,3 +127,4 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
     </div>
   );
 };
+

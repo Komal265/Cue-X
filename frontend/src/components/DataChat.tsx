@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Zap, MessageSquare, Loader2, Bot, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fetchWithAuth } from '../utils/api';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,7 +29,7 @@ const tooltipStyle = {
   borderRadius: '8px',
 };
 
-export const DataChat = ({ datasetId, apiUrl }: DataChatProps) => {
+export const DataChat: React.FC<DataChatProps> = ({ datasetId }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -57,10 +58,15 @@ export const DataChat = ({ datasetId, apiUrl }: DataChatProps) => {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${apiUrl}/api/chat`, {
+      const res = await fetchWithAuth(`/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataset_id: datasetId, question }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dataset_id: datasetId,
+          question: question,
+        }),
       });
       const data = await res.json();
       const aiMsg: Message = {

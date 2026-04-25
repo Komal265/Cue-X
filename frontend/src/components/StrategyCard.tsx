@@ -1,6 +1,5 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Target, Radio, AlertTriangle, Lightbulb, CheckCircle2, MessageCircle, Play, Sparkles, RefreshCw } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowRight, AlertTriangle, Lightbulb, CheckCircle2, Sparkles, RefreshCw } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,8 +64,8 @@ const Skeleton = () => (
 // ─── StrategyCard (Master List Item) ──────────────────────────────────────────
 
 export const StrategyCard = ({ 
-  idx, segmentId, segmentName, segmentValue, defaultCampaign, defaultStrategy,
-  strategy, isLoading, isExpanded, onToggle, onGenerate 
+  idx, segmentId: _segmentId, segmentName, segmentValue, defaultCampaign, defaultStrategy: _defaultStrategy,
+  strategy, isLoading, isExpanded, onToggle, onGenerate: _onGenerate
 }: StrategyCardProps) => {
 
   const urgencyKey = strategy ? strategy.urgency : 'NONE';

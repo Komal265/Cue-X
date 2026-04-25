@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, TrendingUp, Users, DollarSign, BarChart2, Zap } from 'lucide-react';
+import { fetchWithAuth } from '../utils/api';
 import { motion } from 'framer-motion';
 
 interface SegmentStat {
@@ -30,7 +31,7 @@ interface SummaryData {
 }
 
 interface ExecutiveSummaryProps {
-  sessionId: string | undefined;
+  datasetId: string | undefined;
   apiUrl: string;
 }
 
@@ -74,11 +75,13 @@ export const ExecutiveSummary = ({ datasetId, apiUrl }: ExecutiveSummaryProps) =
     if (!datasetId) return;
     (async () => {
       try {
-        const res = await fetch(`${apiUrl}/api/executive-summary/${datasetId}`);
-        if (!res.ok) throw new Error('Failed to load summary');
-        setSummary(await res.json());
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Unknown error');
+        const res = await fetchWithAuth(`/api/executive-summary/${datasetId}`);
+        if (!res.ok) throw new Error('Failed to fetch summary');
+        const data = await res.json();
+        setSummary(data);
+      } catch (err) {
+        console.error(err);
+        setError('Failed to load executive summary');
       } finally {
         setIsLoading(false);
       }

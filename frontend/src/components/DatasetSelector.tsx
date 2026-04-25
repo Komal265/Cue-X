@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Calendar, ArrowRight } from 'lucide-react';
+import { Database, Calendar, ArrowRight, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { fetchWithAuth } from '../utils/api';
 
 interface Dataset {
   id: number;
   filename: string;
   created_at: string;
+  uploaded_at: string;
+  row_count: number;
 }
 
 interface DatasetSelectorProps {
@@ -16,17 +19,17 @@ interface DatasetSelectorProps {
 
 export const DatasetSelector: React.FC<DatasetSelectorProps> = ({ workspaceId, onDatasetSelect, selectedDatasetId }) => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
-  const API_URL = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     const fetchDatasets = async () => {
-      setIsLoading(true);
       try {
-        const res = await fetch(`${API_URL}/api/workspaces/${workspaceId}/datasets`);
-        const data = await res.json();
-        if (Array.isArray(data)) setDatasets(data);
+        const res = await fetchWithAuth(`/api/workspaces/${workspaceId}/datasets`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) setDatasets(data);
+        }
       } catch (err) {
         console.error("Failed to fetch datasets", err);
       } finally {
@@ -38,7 +41,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({ workspaceId, o
   }, [workspaceId]);
 
   if (isLoading) {
-    return <div className="text-sm text-neutral-500 animate-pulse">Loading datasets...</div>;
+    return <div className="text-sm text-neutral-500 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading datasets...</div>;
   }
 
   if (datasets.length === 0) {
