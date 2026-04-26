@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { setToken, fetchWithAuth, isAuthenticated } from '../utils/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { AppBackground } from '../components/ui/AppBackground';
 
 export function AuthPage() {
     const [searchParams] = useSearchParams();
@@ -74,12 +75,7 @@ export function AuthPage() {
 
     return (
         <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center p-4 selection:bg-cyan-500/30">
-            {/* Background elements */}
-            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-900/20 blur-[120px] rounded-full" />
-                <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-900/20 blur-[120px] rounded-full" />
-                <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] mix-blend-overlay" />
-            </div>
+            <AppBackground />
 
             <motion.div 
                 initial={{ opacity: 0, y: 20 }}
@@ -95,7 +91,7 @@ export function AuthPage() {
                     </p>
                 </div>
 
-                <div className="bg-white/[0.02] border border-white/10 backdrop-blur-xl p-8 rounded-2xl shadow-2xl">
+                <div className="glass-card p-8 rounded-2xl shadow-2xl">
                     <form onSubmit={handleSubmit} className="space-y-5">
                         {error && (
                             <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm text-center">
