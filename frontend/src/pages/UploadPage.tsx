@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { DragEvent } from 'react';
 import { Upload, Play } from 'lucide-react';
-import { CelestialSphere } from '../components/ui/celestial-sphere';
+import { AppBackground } from '../components/ui/AppBackground';
 import { WorkspaceSelector } from '../components/WorkspaceSelector';
 import { DatasetSelector } from '../components/DatasetSelector';
 import { getAuthHeaders } from '../utils/api';
@@ -77,9 +77,7 @@ const UploadPage = () => {
 
   return (
     <div className="relative min-h-screen bg-black text-neutral-200 font-sans selection:bg-white/20 overflow-hidden flex flex-col">
-      <div className="absolute inset-0 z-0">
-        <CelestialSphere className="w-full h-full opacity-60 mix-blend-screen" />
-      </div>
+      <AppBackground />
 
       <div className="relative z-10 max-w-4xl w-full mx-auto p-8 pt-24 pb-32 flex-1 flex flex-col items-center">
         {/* Header section */}
