@@ -492,42 +492,72 @@ strategy_cache: dict = {}
 @ai_bp.route('/api/strategy/<int:dataset_id>/<int:segment_id>')
 @login_required
 def strategy_agent(user_id, dataset_id, segment_id):
-    if segment_id not in range(4):
-        return jsonify({'success': False, 'error': 'invalid_segment'}), 400
-
     cache_key = f"{dataset_id}_{segment_id}"
     if cache_key in strategy_cache:
         return jsonify({'success': True, 'strategy': strategy_cache[cache_key]})
 
     df, err = get_customers_df(dataset_id, user_id)
     if err:
-        return jsonify({'error': err}), 404
+        return jsonify({'success': False, 'error': err}), 404
 
+    # ── Resolve segment label from DB (no hardcoded names) ────────────────────
     seg_df = df[df['Cluster'] == segment_id]
     if seg_df.empty:
         return jsonify({'success': False, 'error': 'segment_empty'}), 400
 
     try:
-        count           = len(seg_df)
-        avg_recency     = float(seg_df['Recency'].mean())   if 'Recency'    in seg_df.columns else 0
-        avg_frequency   = float(seg_df['Frequency'].mean()) if 'Frequency'  in seg_df.columns else 0
-        avg_monetary    = float(seg_df['Monetary'].mean())  if 'Monetary'   in seg_df.columns else 0
-        top_season      = seg_df['Season'].mode()[0]        if 'Season'     in seg_df.columns else 'Unknown'
+        # Pull the real segment name from the data itself
+        segment_label = (
+            seg_df['Segment_Name'].mode()[0]
+            if 'Segment_Name' in seg_df.columns and not seg_df['Segment_Name'].isna().all()
+            else f"Segment {segment_id}"
+        )
+        if not segment_label or str(segment_label).strip() == '':
+            segment_label = f"Customer Segment {segment_id}"
+
+        count         = len(seg_df)
+        avg_recency   = float(seg_df['Recency'].mean())   if 'Recency'   in seg_df.columns else 0
+        avg_frequency = float(seg_df['Frequency'].mean()) if 'Frequency' in seg_df.columns else 0
+        avg_monetary  = float(seg_df['Monetary'].mean())  if 'Monetary'  in seg_df.columns else 0
+        top_season    = seg_df['Season'].mode()[0]        if 'Season'    in seg_df.columns and not seg_df['Season'].isna().all() else 'Unknown'
+
+        system_prompt = """You are an expert marketing strategist specializing in customer segmentation and RFM analysis.
+Your task is to generate a detailed, actionable marketing strategy for a specific customer segment.
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "segment_label": "string",
+  "segment_summary": "string",
+  "urgency": "HIGH|MEDIUM|LOW",
+  "rfm_insight": "string",
+  "primary_campaign": {
+    "name": "string",
+    "tagline": "string",
+    "objective": "string",
+    "channels": ["string"],
+    "offer": "string",
+    "cta": "string"
+  },
+  "copy_hooks": ["string", "string"],
+  "kpis": ["string", "string", "string"],
+  "risk": "string",
+  "next_best_action": "string"
+}"""
 
         user_prompt = f"""
+Segment Name: {segment_label}
 Segment ID: {segment_id}
-Segment Name: {SEGMENT_NAMES[segment_id]}
 
 RFM + Behavioral Data:
-- Customer count: {count}
+- Customer count: {count:,}
 - Avg Recency (days since last purchase): {avg_recency:.0f} days
 - Avg Frequency (purchase count): {avg_frequency:.1f}
-- Avg Monetary value: ₹{avg_monetary:,.0f}
+- Avg Monetary value: ${avg_monetary:,.0f}
 - Most active season: {top_season}
 
 Generate the marketing strategy. Return ONLY the JSON object.
 """
-        full_prompt = STRATEGY_SYSTEM_PROMPT + "\n\n" + user_prompt
+        full_prompt = system_prompt + "\n\n" + user_prompt
 
         strategy = None
         try:
@@ -538,19 +568,71 @@ Generate the marketing strategy. Return ONLY the JSON object.
         except json.JSONDecodeError as je:
             print(f"[WARN] Strategy JSON parse failed: {je}. Using rule-based fallback.")
         except Exception as ge:
-            print(f"[WARN] Strategy Gemini failed (quota?): {ge}. Using rule-based fallback.")
+            print(f"[WARN] Strategy Gemini failed: {ge}. Using rule-based fallback.")
 
+        # ── Rule-based fallback (fully DB-driven, no hardcoded names) ─────────
         if strategy is None:
-            cur = 'Rs.'
-            segment_label = SEGMENT_NAMES[segment_id]
-            rule_strategies = {
-                0: {"segment_label": segment_label, "segment_summary": f"{count:,} customers buy frequently but spend modestly at {cur}{avg_monetary:,.0f} avg.", "urgency": "MEDIUM", "rfm_insight": f"High frequency ({avg_frequency:.1f}x) with low monetary ({cur}{avg_monetary:,.0f}) and {avg_recency:.0f}-day recency signals budget-conscious habitual buyers.", "primary_campaign": {"name": "Value Ladder Program", "tagline": "Spend more, earn more.", "objective": "Increase average order value through tiered spend rewards.", "channels": ["Email", "In-App", "Push"], "offer": "15% off orders above Rs.2,000 + free shipping above Rs.3,000", "cta": "Unlock Your Reward"}, "copy_hooks": [f"You've shopped {avg_frequency:.0f} times — your next order unlocks VIP status.", "Small upgrades, big rewards. See what you're missing."], "kpis": ["Increase avg order value by 30% within 60 days", "Achieve 25% coupon redemption rate on tiered offer", "Reduce churn rate by 15% within 90 days"], "risk": "Discount fatigue may condition these buyers to only purchase during promotions, eroding long-term margins.", "next_best_action": f"Send a personalised email to all {count:,} customers this week featuring a spend-threshold offer with a 7-day countdown."},
-                1: {"segment_label": segment_label, "segment_summary": f"{count:,} VIP customers drive premium revenue at {cur}{avg_monetary:,.0f} avg monetary — these are your brand champions.", "urgency": "LOW", "rfm_insight": f"Low recency ({avg_recency:.0f} days), high frequency ({avg_frequency:.1f}x), and high monetary ({cur}{avg_monetary:,.0f}) mark these as your most valuable customers.", "primary_campaign": {"name": "CUE-X Inner Circle", "tagline": "You're one of a kind.", "objective": "Deepen loyalty and increase referrals through an exclusive membership tier.", "channels": ["Email", "WhatsApp", "Instagram"], "offer": "Early access to new collections + 20% loyalty discount + free priority shipping", "cta": "Claim VIP Access"}, "copy_hooks": [f"As one of our top {count:,} customers, you get access before anyone else.", f"Your {avg_frequency:.0f} purchases have earned you something special.", f"New {top_season} collection drops Friday — you're on the list."], "kpis": ["Maintain 90%+ retention rate over next 6 months", f"Generate 30 referrals per 100 VIP customers in {top_season} campaign", f"Increase purchase frequency from {avg_frequency:.1f}x to {avg_frequency+1:.1f}x within 6 months"], "risk": "Over-communicating with VIP customers risks perceived intrusiveness; quality matters more than volume.", "next_best_action": f"Launch a WhatsApp broadcast to your {count:,} VIP customers announcing early access to the {top_season} collection this weekend."},
-                2: {"segment_label": segment_label, "segment_summary": f"{count:,} customers have not purchased in {avg_recency:.0f} days on average — urgent win-back action needed before permanent churn.", "urgency": "HIGH", "rfm_insight": f"High recency ({avg_recency:.0f} days), low frequency ({avg_frequency:.1f}x), and declining monetary ({cur}{avg_monetary:,.0f}) signal customers who have fully disengaged.", "primary_campaign": {"name": "We Miss You", "tagline": "Come back. We've kept something for you.", "objective": "Reactivate lapsed customers with a time-limited high-value win-back offer.", "channels": ["Email", "SMS", "Retargeting Ads"], "offer": "25% off your next purchase — valid for 10 days only", "cta": "Reclaim Your Offer"}, "copy_hooks": [f"It's been {avg_recency:.0f} days. We haven't forgotten you.", "Your 25% comeback offer expires in 10 days. Don't miss it.", "Your favourite product is back in stock — and it's waiting for you."], "kpis": [f"Reactivate at least 20% of {count:,} lost customers within 30 days", "Achieve email open rate above 22% on win-back sequence", f"Recover revenue from at least {int(count * 0.2):,} reactivated customers"], "risk": "Aggressive discounting may attract one-time buyers who churn again, lowering LTV.", "next_best_action": f"Launch a 3-email win-back drip today: Day 1 (we miss you), Day 5 (25% offer), Day 9 (last chance) targeting all {count:,} lapsed customers."},
-                3: {"segment_label": segment_label, "segment_summary": f"{count:,} customers purchase primarily in {top_season} and are dormant otherwise — seasonal activation is the key lever.", "urgency": "MEDIUM", "rfm_insight": f"Moderate recency ({avg_recency:.0f} days) and low frequency ({avg_frequency:.1f}x) with spend concentrated in {top_season} indicates season-driven, not brand-driven, intent.", "primary_campaign": {"name": f"{top_season} First Access", "tagline": f"Your {top_season} picks are waiting.", "objective": f"Convert seasonal intent into repeat purchases before and after the {top_season} peak.", "channels": ["Email", "Instagram", "Push"], "offer": f"Free gift with {top_season} orders + 10% early bird discount", "cta": f"Shop {top_season} Now"}, "copy_hooks": [f"Your {top_season} wishlist just got cheaper. 10% off, this week only.", "Buy now, wear it all season — free gift included."], "kpis": [f"Increase purchase frequency by 0.5x during {top_season} window", "Drive 35% click-through rate on seasonal campaign email", "Achieve 25% uplift in avg monetary per customer during campaign period"], "risk": f"If the {top_season} campaign underperforms, these customers may remain once-a-year buyers with no off-season engagement.", "next_best_action": f"Build a {top_season}-themed lookbook email featuring your products, scheduled 2 weeks before {top_season} begins."},
+            cur = '$'
+            # Determine urgency and campaign type from real RFM values
+            if avg_recency > 120:
+                urgency, campaign_name, tagline, offer, cta = (
+                    'HIGH',
+                    'Win-Back Campaign',
+                    f'Come back. We have something for you.',
+                    '25% off your next purchase — valid 10 days',
+                    'Reclaim Your Offer'
+                )
+            elif avg_monetary > 1000:
+                urgency, campaign_name, tagline, offer, cta = (
+                    'LOW',
+                    'VIP Loyalty Program',
+                    "You're one of a kind.",
+                    'Early access + 20% loyalty discount + free shipping',
+                    'Claim VIP Access'
+                )
+            elif avg_frequency > 5:
+                urgency, campaign_name, tagline, offer, cta = (
+                    'MEDIUM',
+                    'Value Ladder Program',
+                    'Spend more, earn more.',
+                    '15% off orders above $200 + free shipping above $300',
+                    'Unlock Your Reward'
+                )
+            else:
+                urgency, campaign_name, tagline, offer, cta = (
+                    'MEDIUM',
+                    f'{top_season} Activation Campaign',
+                    f'Your {top_season} picks are waiting.',
+                    f'Free gift with {top_season} orders + 10% early bird discount',
+                    f'Shop {top_season} Now'
+                )
+
+            strategy = {
+                'segment_label': segment_label,
+                'segment_summary': f'{count:,} customers in the {segment_label} segment with {cur}{avg_monetary:,.0f} avg spend and {avg_recency:.0f}-day avg recency.',
+                'urgency': urgency,
+                'rfm_insight': f'Recency: {avg_recency:.0f}d | Frequency: {avg_frequency:.1f}x | Monetary: {cur}{avg_monetary:,.0f}',
+                'primary_campaign': {
+                    'name': campaign_name,
+                    'tagline': tagline,
+                    'objective': f'Improve engagement and revenue for the {segment_label} segment.',
+                    'channels': ['Email', 'In-App', 'Push'],
+                    'offer': offer,
+                    'cta': cta,
+                },
+                'copy_hooks': [
+                    f'Your last purchase was {avg_recency:.0f} days ago — here is something worth coming back for.',
+                    f'You have shopped {avg_frequency:.0f} times. Your loyalty deserves a reward.',
+                ],
+                'kpis': [
+                    f'Increase segment revenue by 20% within 60 days',
+                    f'Achieve 25%+ campaign open rate',
+                    f'Reduce churn in {segment_label} by 15% within 90 days',
+                ],
+                'risk': 'Monitor discount dependency; avoid conditioning customers to only buy during promotions.',
+                'next_best_action': f'Launch a targeted email to all {count:,} customers in the {segment_label} segment this week with a personalised offer.',
+                'powered_by': 'rule-based',
             }
-            strategy = rule_strategies[segment_id]
-            strategy['powered_by'] = 'rule-based'
 
         strategy_cache[cache_key] = strategy
         return jsonify({'success': True, 'strategy': strategy})
@@ -559,3 +641,5 @@ Generate the marketing strategy. Return ONLY the JSON object.
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
