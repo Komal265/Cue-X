@@ -6,7 +6,9 @@ from routes.charts import charts_bp
 from routes.ai import ai_bp
 from routes.workspaces import workspace_bp
 from routes.auth import auth_bp
+from routes.integrations import integrations_bp
 from database import init_db
+from scheduler import start_scheduler
 
 def create_app():
     app = Flask(__name__)
@@ -17,7 +19,9 @@ def create_app():
     app.register_blueprint(ai_bp)
     app.register_blueprint(workspace_bp)
     app.register_blueprint(auth_bp)
-    init_db()   # create tables if they don't exist yet
+    app.register_blueprint(integrations_bp)
+    init_db()   # create / migrate tables
+    start_scheduler(app)  # no-op unless SCHEDULER_ENABLED=true
     return app
 
 if __name__ == '__main__':
