@@ -1,5 +1,7 @@
 import os
 import logging
+import json
+import threading
 import numpy as np
 import pandas as pd
 import re
@@ -7,8 +9,17 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 from sqlalchemy import text
 from services.ml_service import auto_cluster_rfm, rfm_segment_map
+from services.model_optimizer import run_optimizer, apply_recommended_model
 from services.session_store import UPLOAD_FOLDER, load_session
-from config import BASE_URL
+from config import (
+    BASE_URL,
+    OPTIMIZER_ENABLED,
+    OPTIMIZER_MAX_K,
+    OPTIMIZER_IMPROVEMENT_THRESHOLD,
+    OPTIMIZER_MIN_COVERAGE,
+    OPTIMIZER_MAX_TINY_CLUSTER_RATIO,
+    OPTIMIZER_MIN_CLUSTER_SIZE_RATIO,
+)
 from database import get_connection
 from models import insert_dataset, insert_customers, insert_model_metadata
 from utils.auth import login_required
@@ -16,6 +27,88 @@ from utils.auth import login_required
 logger = logging.getLogger(__name__)
 
 upload_bp = Blueprint('upload', __name__)
+_optimizer_jobs: dict[int, dict] = {}
+_optimizer_lock = threading.Lock()
+
+
+def _optimizer_config() -> dict:
+    return {
+        "max_k": OPTIMIZER_MAX_K,
+        "improvement_threshold": OPTIMIZER_IMPROVEMENT_THRESHOLD,
+        "min_coverage": OPTIMIZER_MIN_COVERAGE,
+        "max_tiny_ratio": OPTIMIZER_MAX_TINY_CLUSTER_RATIO,
+        "min_cluster_size_ratio": OPTIMIZER_MIN_CLUSTER_SIZE_RATIO,
+    }
+
+
+def _user_can_access_dataset(user_id: int, dataset_id: int) -> bool:
+    with get_connection() as conn:
+        if conn is None:
+            return False
+        row = conn.execute(
+            text(
+                """
+                SELECT d.id
+                FROM datasets d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.id = :dataset_id AND w.user_id = :user_id
+                """
+            ),
+            {"dataset_id": dataset_id, "user_id": user_id},
+        ).fetchone()
+        return row is not None
+
+
+def _run_optimizer_job(dataset_id: int) -> None:
+    with _optimizer_lock:
+        _optimizer_jobs[dataset_id] = {
+            "status": "running",
+            "started_at": datetime.utcnow().isoformat(),
+            "dataset_id": dataset_id,
+        }
+    try:
+        result = run_optimizer(dataset_id, _optimizer_config())
+        result["finished_at"] = datetime.utcnow().isoformat()
+        with _optimizer_lock:
+            _optimizer_jobs[dataset_id] = result
+
+        # Persist run metadata snapshot for audit/versioning.
+        with get_connection() as conn:
+            if conn is not None:
+                insert_model_metadata(
+                    conn,
+                    dataset_id=dataset_id,
+                    model_name="optimizer_v1",
+                    parameters=json.dumps(result),
+                    silhouette_score=(
+                        result.get("winner", {}).get("silhouette")
+                        if isinstance(result, dict)
+                        else None
+                    ),
+                )
+    except Exception as exc:
+        with _optimizer_lock:
+            _optimizer_jobs[dataset_id] = {
+                "status": "failed",
+                "dataset_id": dataset_id,
+                "error": str(exc),
+                "finished_at": datetime.utcnow().isoformat(),
+            }
+        logger.exception("[OPT] Optimizer job failed for dataset_id=%s", dataset_id)
+
+
+def _queue_optimizer_job(dataset_id: int) -> None:
+    with _optimizer_lock:
+        _optimizer_jobs[dataset_id] = {
+            "status": "queued",
+            "dataset_id": dataset_id,
+            "queued_at": datetime.utcnow().isoformat(),
+        }
+    threading.Thread(
+        target=_run_optimizer_job,
+        args=(dataset_id,),
+        daemon=True,
+    ).start()
 
 
 def _normalize_col_name(name: str) -> str:
@@ -213,6 +306,144 @@ def home():
     return jsonify({"status": "CUE-X API running", "version": "2.0-RFM"})
 
 
+@upload_bp.route('/api/model-optimizer/status/<int:dataset_id>', methods=['GET'])
+@login_required
+def optimizer_status(user_id, dataset_id):
+    if not _user_can_access_dataset(user_id, dataset_id):
+        return jsonify({"error": "Dataset not found or unauthorized"}), 404
+
+    with _optimizer_lock:
+        job = _optimizer_jobs.get(dataset_id)
+    if (
+        isinstance(job, dict)
+        and job.get("status") == "failed"
+        and "no customer rows" in str(job.get("error", "")).lower()
+    ):
+        # Retry once if failure was caused by early read before rows became visible.
+        with get_connection() as conn:
+            if conn is not None:
+                cnt = conn.execute(
+                    text("SELECT COUNT(*) FROM customers WHERE dataset_id = :dataset_id"),
+                    {"dataset_id": dataset_id},
+                ).scalar()
+                if cnt and int(cnt) > 0:
+                    _queue_optimizer_job(dataset_id)
+                    with _optimizer_lock:
+                        job = _optimizer_jobs.get(dataset_id)
+    if job:
+        return jsonify(job), 200
+
+    # Fallback: check persisted metadata if process restarted.
+    with get_connection() as conn:
+        if conn is None:
+            return jsonify({"status": "unknown", "dataset_id": dataset_id}), 200
+        row = conn.execute(
+            text(
+                """
+                SELECT parameters, created_at
+                FROM models_used
+                WHERE dataset_id = :dataset_id AND model_name = 'optimizer_v1'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"dataset_id": dataset_id},
+        ).fetchone()
+    if not row:
+        return jsonify({"status": "queued", "dataset_id": dataset_id}), 200
+    try:
+        payload = json.loads(row[0]) if row[0] else {}
+        if isinstance(payload, dict):
+            if (
+                payload.get("status") == "failed"
+                and "no customer rows" in str(payload.get("error", "")).lower()
+            ):
+                with get_connection() as conn:
+                    if conn is not None:
+                        cnt = conn.execute(
+                            text("SELECT COUNT(*) FROM customers WHERE dataset_id = :dataset_id"),
+                            {"dataset_id": dataset_id},
+                        ).scalar()
+                        if cnt and int(cnt) > 0:
+                            _queue_optimizer_job(dataset_id)
+                            with _optimizer_lock:
+                                running_job = _optimizer_jobs.get(dataset_id)
+                            if running_job:
+                                return jsonify(running_job), 200
+            payload.setdefault("dataset_id", dataset_id)
+            payload.setdefault("status", "done")
+            payload.setdefault("persisted", True)
+            return jsonify(payload), 200
+    except Exception:
+        pass
+    return jsonify({"status": "done", "dataset_id": dataset_id, "persisted": True}), 200
+
+
+@upload_bp.route('/api/model-optimizer/apply/<int:dataset_id>', methods=['POST'])
+@login_required
+def optimizer_apply(user_id, dataset_id):
+    if not _user_can_access_dataset(user_id, dataset_id):
+        return jsonify({"error": "Dataset not found or unauthorized"}), 404
+    with _optimizer_lock:
+        job = _optimizer_jobs.get(dataset_id)
+    if not job:
+        # Fallback to persisted optimizer result when app process restarted.
+        with get_connection() as conn:
+            if conn is None:
+                return jsonify({"success": False, "message": "Database unavailable."}), 500
+            row = conn.execute(
+                text(
+                    """
+                    SELECT parameters
+                    FROM models_used
+                    WHERE dataset_id = :dataset_id AND model_name = 'optimizer_v1'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"dataset_id": dataset_id},
+            ).fetchone()
+        if not row:
+            return jsonify({"success": False, "status": "queued", "message": "Optimizer result not ready yet."}), 202
+        try:
+            job = json.loads(row[0]) if row[0] else {}
+        except Exception:
+            job = {}
+
+    if job.get("status") != "done":
+        return jsonify({"success": False, "status": job.get("status", "running"), "message": "Optimizer still running."}), 202
+
+    if not job.get("recommend_upgrade"):
+        return jsonify(
+            {
+                "success": True,
+                "applied": False,
+                "message": "No upgrade recommended. Baseline segmentation remains active.",
+                "winner": job.get("winner"),
+            }
+        ), 200
+
+    apply_result = apply_recommended_model(dataset_id, job)
+    if not apply_result.get("success"):
+        return jsonify(
+            {
+                "success": False,
+                "applied": False,
+                "message": apply_result.get("error", "Failed to apply optimized model."),
+            }
+        ), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "applied": True,
+            "message": "Updated segmentation is ready. Click 'Load Updated Results' to view changes.",
+            "winner": job.get("winner"),
+            "details": apply_result,
+        }
+    ), 200
+
+
 # ── Upload & Segment ──────────────────────────────────────────────────────────
 @upload_bp.route('/upload', methods=['POST'])
 @login_required
@@ -361,6 +592,8 @@ def upload_file(user_id):
 
         # ── Step 8: Persist to PostgreSQL (non-blocking) ──────────────────────
         dataset_id = None
+        optimizer_status = "disabled"
+        should_queue_optimizer = False
         
         try:
             # Silhouette score — measures cluster quality (−1 to 1, higher is better)
@@ -390,8 +623,17 @@ def upload_file(user_id):
                             ),
                             silhouette_score=sil_score,
                         )
+                        if OPTIMIZER_ENABLED:
+                            optimizer_status = "queued"
+                            should_queue_optimizer = True
+                        else:
+                            optimizer_status = "disabled"
         except Exception as db_err:
             logger.warning(f"[DB] Persistence skipped due to error: {db_err}")
+
+        # Queue optimizer only after DB transaction block has exited/committed.
+        if OPTIMIZER_ENABLED and should_queue_optimizer and dataset_id is not None:
+            _queue_optimizer_job(dataset_id)
 
         # BASE_URL from config is already imported, avoid shadowing
         return jsonify({
@@ -406,7 +648,8 @@ def upload_file(user_id):
             'elbow_k':           clustering_diag.get("elbow_k"),
             'column_mapping':    column_mapping,
             'dataset_id':        dataset_id,
-            'workspace_id':      workspace_id
+            'workspace_id':      workspace_id,
+            'optimizer_status':  optimizer_status,
         }), 200
 
     except Exception as e:

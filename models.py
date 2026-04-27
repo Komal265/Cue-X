@@ -189,9 +189,10 @@ def insert_model_metadata(
             },
         )
         model_row_id = result.fetchone()[0]
+        sil_text = f"{float(silhouette_score):.4f}" if silhouette_score is not None else "None"
         logger.info(
             f"[DB] Model metadata inserted: id={model_row_id}, "
-            f"model={model_name}, silhouette={silhouette_score:.4f}"
+            f"model={model_name}, silhouette={sil_text}"
         )
         return model_row_id
     except Exception as exc:
