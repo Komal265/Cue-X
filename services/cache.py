@@ -1,6 +1,5 @@
 import time
 import sys
-from flask import jsonify
 
 # In-memory store. Easy to replace with Redis later.
 CACHE = {}
@@ -61,8 +60,4 @@ def get_cache_status() -> dict:
         "memory_usage": f"{memory_usage} bytes"
     }
 
-def cached_response(data: dict | list, hit: bool):
-    """Wrap data in a Flask jsonify response and inject X-Cache header."""
-    response = jsonify(data)
-    response.headers["X-Cache"] = "HIT" if hit else "MISS"
-    return response
+
