@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify
 import pandas as pd
 from database import get_connection, text
 from utils.auth import login_required
+from services.cache import get_cache, set_cache
 
 charts_bp = Blueprint('charts', __name__)
 
@@ -36,12 +37,19 @@ def get_customers_df(dataset_id, user_id):
 @charts_bp.route('/api/segment-counts/<int:dataset_id>')
 @login_required
 def segment_counts(user_id, dataset_id):
+    cache_key = f"dashboard:{dataset_id}:segment_counts"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
         counts = df['segment_label'].value_counts().to_dict()
-        return jsonify({'labels': list(counts.keys()), 'values': list(counts.values())})
+        res = {'labels': list(counts.keys()), 'values': list(counts.values())}
+        set_cache(cache_key, res, ttl=600)
+        return jsonify(res)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -50,12 +58,19 @@ def segment_counts(user_id, dataset_id):
 @charts_bp.route('/api/spending-by-segment/<int:dataset_id>')
 @login_required
 def spending_by_segment(user_id, dataset_id):
+    cache_key = f"dashboard:{dataset_id}:spending_by_segment"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
     try:
         avg_spend = df.groupby('segment_label')['monetary'].mean().to_dict()
-        return jsonify({'labels': list(avg_spend.keys()), 'values': list(avg_spend.values())})
+        res = {'labels': list(avg_spend.keys()), 'values': list(avg_spend.values())}
+        set_cache(cache_key, res, ttl=600)
+        return jsonify(res)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -64,6 +79,11 @@ def spending_by_segment(user_id, dataset_id):
 @charts_bp.route('/api/recency-value-scatter/<int:dataset_id>')
 @login_required
 def recency_value_scatter(user_id, dataset_id):
+    cache_key = f"dashboard:{dataset_id}:recency_value_scatter"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
@@ -75,6 +95,7 @@ def recency_value_scatter(user_id, dataset_id):
                 'name': seg,
                 'data': seg_df[['recency', 'monetary', 'customer_id']].values.tolist()
             })
+        set_cache(cache_key, result, ttl=600)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -84,6 +105,11 @@ def recency_value_scatter(user_id, dataset_id):
 @charts_bp.route('/api/seasonal-distribution/<int:dataset_id>')
 @login_required
 def seasonal_distribution(user_id, dataset_id):
+    cache_key = f"dashboard:{dataset_id}:seasonal_distribution"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
@@ -95,7 +121,9 @@ def seasonal_distribution(user_id, dataset_id):
         counts = df.groupby(['season', 'segment_label']).size().unstack(fill_value=0)
         labels = counts.index.tolist()
         datasets = [{'label': col, 'data': counts[col].tolist()} for col in counts.columns]
-        return jsonify({'labels': labels, 'datasets': datasets})
+        res = {'labels': labels, 'datasets': datasets}
+        set_cache(cache_key, res, ttl=600)
+        return jsonify(res)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -104,6 +132,11 @@ def seasonal_distribution(user_id, dataset_id):
 @charts_bp.route('/api/rfm-scores/<int:dataset_id>')
 @login_required
 def rfm_scores(user_id, dataset_id):
+    cache_key = f"dashboard:{dataset_id}:rfm_scores"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     df, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
@@ -124,6 +157,8 @@ def rfm_scores(user_id, dataset_id):
         ).reset_index()
         
         scores = scores.rename(columns={'segment_label': 'Segment_Name'})
-        return jsonify(scores.to_dict(orient='records'))
+        res = scores.to_dict(orient='records')
+        set_cache(cache_key, res, ttl=600)
+        return jsonify(res)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

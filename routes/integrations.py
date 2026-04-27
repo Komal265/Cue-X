@@ -26,6 +26,7 @@ from models import (
 )
 from routes.upload import map_sales_columns
 from services.clustering_service import run_clustering
+from services.cache import clear_cache
 from utils.auth import login_required
 from sqlalchemy import text
 
@@ -150,6 +151,9 @@ def connect_google_sheets(user_id):
             source_id=source_id,
             ingestion_type="auto",
         )
+        if result.get("dataset_id"):
+            clear_cache(f"dashboard:{result['dataset_id']}:")
+            clear_cache(f"ai:{result['dataset_id']}:")
         return jsonify({
             "success": True,
             "source_id": source_id,
@@ -204,6 +208,9 @@ def webhook_ingest(user_id, workspace_id):
             source_id=source_id,
             ingestion_type="auto",
         )
+        if result.get("dataset_id"):
+            clear_cache(f"dashboard:{result['dataset_id']}:")
+            clear_cache(f"ai:{result['dataset_id']}:")
         return jsonify({"success": True, **result})
     except Exception as e:
         logger.error(f"[Webhook] Clustering failed: {e}")
@@ -238,6 +245,9 @@ def refresh_source(user_id, source_id):
                 source_id=source_id,
                 ingestion_type="auto",
             )
+            if result.get("dataset_id"):
+                clear_cache(f"dashboard:{result['dataset_id']}:")
+                clear_cache(f"ai:{result['dataset_id']}:")
             return jsonify({"success": True, **result})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-from config import OPTIMIZER_ENABLED
+from config import settings
 from database import get_connection
 from models import (
     insert_dataset, insert_customers, insert_model_metadata,
@@ -196,7 +196,7 @@ def run_clustering(
                     if source_id:
                         update_data_source_sync_time(conn, source_id)
                     
-                    if OPTIMIZER_ENABLED:
+                    if getattr(settings, "OPTIMIZER_ENABLED", True):
                         optimizer_status = "queued"
                         should_queue_optimizer = True
     except Exception as db_err:

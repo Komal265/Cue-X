@@ -1,9 +1,11 @@
 import json
 import re
+import hashlib
 import pandas as pd
 import numpy as np
 from flask import Blueprint, request, jsonify
 from services.gemini_service import gemini_client, gemini_generate
+from services.cache import get_cache, set_cache
 
 from database import get_connection, text
 from utils.auth import login_required
@@ -74,6 +76,12 @@ def chat_query(user_id):
     if not dataset_id:
         return jsonify({'error': 'Dataset ID is required'}), 400
 
+    q_hash = hashlib.md5(question.encode('utf-8')).hexdigest()
+    cache_key = f"ai:{dataset_id}:chat:{q_hash}"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     per_customer, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
@@ -138,12 +146,14 @@ Answer in two clear parts:
 Use bullet points for the steps. Reference real numbers from the data. Keep the total answer under 120 words.
 Do NOT mention pandas, dataframes, or code."""
                 answer = gemini_generate(compound_prompt)
-                return jsonify({
+                res = {
                     'answer':     answer,
                     'data':       seg_stats_dict,
                     'query':      None,
                     'powered_by': 'gemini',
-                })
+                }
+                set_cache(cache_key, res, ttl=600)
+                return jsonify(res)
             except Exception as e:
                 print(f"Gemini compound error: {e}")
                 # fall through to rule-based
@@ -166,12 +176,14 @@ Give a concrete, actionable answer in 3-5 sentences.
 - Be direct and business-focused, not generic
 - Do NOT mention pandas, dataframes, or code"""
                 answer = gemini_generate(advisory_prompt)
-                return jsonify({
+                res = {
                     'answer':     answer,
                     'data':       seg_stats_dict,
                     'query':      None,
                     'powered_by': 'gemini',
-                })
+                }
+                set_cache(cache_key, res, ttl=600)
+                return jsonify(res)
             except Exception as e:
                 print(f"Gemini advisory error: {e}")
                 # fall through to rule-based advisory
@@ -235,12 +247,14 @@ Write a concise, friendly 2-4 sentence response that directly answers the questi
 Include specific numbers. Do not mention code, pandas, or dataframes."""
 
                 answer = gemini_generate(answer_prompt)
-                return jsonify({
+                res = {
                     'answer':     answer,
                     'data':       result_serializable,
                     'query':      generated_code,
                     'powered_by': 'gemini',
-                })
+                }
+                set_cache(cache_key, res, ttl=600)
+                return jsonify(res)
 
             except Exception as e:
                 print(f"Gemini data-query error: {e}")
@@ -328,13 +342,20 @@ Include specific numbers. Do not mention code, pandas, or dataframes."""
     except Exception as e:
         answer = f"Could not process your question: {str(e)}"
 
-    return jsonify({'answer': answer, 'data': None, 'query': None, 'powered_by': 'rule-based'})
+    res = {'answer': answer, 'data': None, 'query': None, 'powered_by': 'rule-based'}
+    set_cache(cache_key, res, ttl=600)
+    return jsonify(res)
 
 
 # ── Executive Summary ─────────────────────────────────────────────────────────
 @ai_bp.route('/api/executive-summary/<int:dataset_id>')
 @login_required
 def executive_summary(user_id, dataset_id):
+    cache_key = f"ai:{dataset_id}:exec_summary"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify(cached)
+
     per_customer, err = get_customers_df(dataset_id, user_id)
     if err:
         return jsonify({'error': err}), 404
@@ -489,7 +510,7 @@ Return only the sentence."""
             except Exception as e:
                 print(f"Gemini summary error: {e}")
 
-        return jsonify({
+        res = {
             'headline':    ai_headline or headline,
             'rule_headline': headline,
             'segments':    segments,
@@ -502,7 +523,9 @@ Return only the sentence."""
                 'num_segments':    num_segments,
             },
             'ai_powered': ai_headline is not None,
-        })
+        }
+        set_cache(cache_key, res, ttl=600)
+        return jsonify(res)
 
     except Exception as e:
         import traceback
@@ -511,14 +534,13 @@ Return only the sentence."""
 
 
 # ── Strategy Agent ────────────────────────────────────────────────────────────
-strategy_cache: dict = {}
-
 @ai_bp.route('/api/strategy/<int:dataset_id>/<int:segment_id>')
 @login_required
 def strategy_agent(user_id, dataset_id, segment_id):
-    cache_key = f"{dataset_id}_{segment_id}"
-    if cache_key in strategy_cache:
-        return jsonify({'success': True, 'strategy': strategy_cache[cache_key]})
+    cache_key = f"ai:{dataset_id}:strategy:{segment_id}"
+    cached = get_cache(cache_key)
+    if cached:
+        return jsonify({'success': True, 'strategy': cached})
 
     df, err = get_customers_df(dataset_id, user_id)
     if err:
@@ -658,7 +680,7 @@ Generate the marketing strategy. Return ONLY the JSON object.
                 'powered_by': 'rule-based',
             }
 
-        strategy_cache[cache_key] = strategy
+        set_cache(cache_key, strategy, ttl=600)
         return jsonify({'success': True, 'strategy': strategy})
 
     except Exception as e:

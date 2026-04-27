@@ -11,17 +11,9 @@ from sqlalchemy import text
 from services.ml_service import auto_cluster_rfm, rfm_segment_map
 from services.model_optimizer import run_optimizer, apply_recommended_model
 from services.session_store import UPLOAD_FOLDER, load_session
-from config import (
-    BASE_URL,
-    OPTIMIZER_ENABLED,
-    OPTIMIZER_MAX_K,
-    OPTIMIZER_IMPROVEMENT_THRESHOLD,
-    OPTIMIZER_MIN_COVERAGE,
-    OPTIMIZER_MAX_TINY_CLUSTER_RATIO,
-    OPTIMIZER_MIN_CLUSTER_SIZE_RATIO,
-    OPTIMIZER_BOOTSTRAP_REPEATS,
-    OPTIMIZER_BOOTSTRAP_SAMPLE_RATIO,
-)
+from config import settings
+from services.cache import clear_cache
+
 from database import get_connection
 from models import insert_dataset, insert_customers, insert_model_metadata
 from utils.auth import login_required
@@ -35,13 +27,13 @@ _optimizer_lock = threading.Lock()
 
 def _optimizer_config() -> dict:
     return {
-        "max_k": OPTIMIZER_MAX_K,
-        "improvement_threshold": OPTIMIZER_IMPROVEMENT_THRESHOLD,
-        "min_coverage": OPTIMIZER_MIN_COVERAGE,
-        "max_tiny_ratio": OPTIMIZER_MAX_TINY_CLUSTER_RATIO,
-        "min_cluster_size_ratio": OPTIMIZER_MIN_CLUSTER_SIZE_RATIO,
-        "bootstrap_repeats": OPTIMIZER_BOOTSTRAP_REPEATS,
-        "bootstrap_sample_ratio": OPTIMIZER_BOOTSTRAP_SAMPLE_RATIO,
+        "max_k":                 getattr(settings, "OPTIMIZER_MAX_K", 10),
+        "improvement_threshold": getattr(settings, "OPTIMIZER_IMPROVEMENT_THRESHOLD", 0.02),
+        "min_coverage":          getattr(settings, "OPTIMIZER_MIN_COVERAGE", 0.70),
+        "max_tiny_ratio":        getattr(settings, "OPTIMIZER_MAX_TINY_CLUSTER_RATIO", 0.20),
+        "min_cluster_size_ratio":getattr(settings, "OPTIMIZER_MIN_CLUSTER_SIZE_RATIO", 0.02),
+        "bootstrap_repeats":     getattr(settings, "OPTIMIZER_BOOTSTRAP_REPEATS", 3),
+        "bootstrap_sample_ratio":getattr(settings, "OPTIMIZER_BOOTSTRAP_SAMPLE_RATIO", 0.75),
     }
 
 
@@ -437,6 +429,9 @@ def optimizer_apply(user_id, dataset_id):
             }
         ), 500
 
+    # Invalidate cache since clustering labels changed!
+    clear_cache(f"dashboard:{dataset_id}:")
+    clear_cache(f"ai:{dataset_id}:")
     return jsonify(
         {
             "success": True,
@@ -535,9 +530,14 @@ def upload_file(user_id):
         raw.to_csv(output_path, index=False)
         raw.to_csv(session_path, index=False)
 
+        # Invalidate any cache if the ID somehow existed (safety measure)
+        if result.get("dataset_id"):
+            clear_cache(f"dashboard:{result['dataset_id']}:")
+            clear_cache(f"ai:{result['dataset_id']}:")
+
         return jsonify({
             'message':           'File processed successfully!',
-            'download_url':      f'{BASE_URL}/download',
+            'download_url':      f'{getattr(settings, "BASE_URL", "http://localhost:10000")}/download',
             'session_id':        session_id,
             'visualization_url': f'/visualization/{session_id}',
             'total_customers':   result.get("total_customers"),
