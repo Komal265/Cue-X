@@ -13,14 +13,14 @@ try:
     rfm_model = joblib.load(RFM_MODEL_PATH)
     print("[OK] RFM model loaded")
 except Exception as e:
-    print(f"[ERR] RFM model load failed: {e}")
+    print(f"[WARN] model load failed: {e}")
     rfm_model = None
 
 try:
     rfm_scaler = joblib.load(RFM_SCALER_PATH)
     print("[OK] RFM scaler loaded")
 except Exception as e:
-    print(f"[ERR] RFM scaler load failed: {e}")
+    print(f"[WARN] model load failed: {e}")
     rfm_scaler = None
 
 try:

@@ -1,3 +1,6 @@
+# Render Start Command:
+# gunicorn "app:create_app()" --workers 1 --threads 4 --bind 0.0.0.0:$PORT
+
 from flask import Flask
 from flask_cors import CORS
 from config import settings
@@ -39,6 +42,10 @@ validate_config()
 
 
 def create_app():
+    import os
+    print("[BOOT] App starting...")
+    print("[BOOT] Environment:", os.getenv("RENDER", "local"))
+    
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
@@ -112,4 +119,6 @@ if __name__ == '__main__':
     app = create_app()
     # debug=False prevents the Werkzeug reloader from spawning a second
     # child process — which would give it a DIFFERENT copy of CACHE in memory.
-    app.run(host='0.0.0.0', port=settings.PORT, debug=False)
+    import os
+    PORT = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=PORT, debug=False)
