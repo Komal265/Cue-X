@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from database import get_connection
 from models import insert_workspace, get_workspaces, get_datasets_by_workspace, text, serialize_datetime
 from utils.auth import login_required
+from services.cache import clear_cache
 
 workspace_bp = Blueprint("workspaces", __name__, url_prefix="/api/workspaces")
 
@@ -93,4 +94,49 @@ def get_dataset_summary(user_id, dataset_id):
             return jsonify(dataset)
         except Exception as e:
             print(f"Error fetching dataset summary: {e}")
+            return jsonify({'error': str(e)}), 500
+
+
+# ── Delete Dataset ────────────────────────────────────────────────────────────
+@workspace_bp.route('/dataset/<int:dataset_id>', methods=['DELETE'])
+@login_required
+def delete_dataset(user_id, dataset_id):
+    """
+    Hard-delete a dataset and all its associated data in safe order:
+    models_used → customers → datasets (FK cascade handles children,
+    but we do it explicitly so the log is auditable and we control order).
+    """
+    print(f"DELETE /api/workspaces/dataset/{dataset_id} by user {user_id}")
+    with get_connection() as conn:
+        if conn is None:
+            return jsonify({'error': 'Database connection failed'}), 500
+        try:
+            # 1. Validate dataset exists AND user owns it
+            res = conn.execute(text("""
+                SELECT d.id FROM datasets d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.id = :dataset_id AND w.user_id = :user_id
+            """), {"dataset_id": dataset_id, "user_id": user_id}).fetchone()
+
+            if not res:
+                return jsonify({'error': 'Dataset not found or unauthorized'}), 404
+
+            # 2. Delete child records in safe dependency order
+            conn.execute(text("DELETE FROM models_used WHERE dataset_id = :id"), {"id": dataset_id})
+            conn.execute(text("DELETE FROM customers WHERE dataset_id = :id"),   {"id": dataset_id})
+
+            # 3. Delete dataset record itself
+            conn.execute(text("DELETE FROM datasets WHERE id = :id"), {"id": dataset_id})
+            conn.commit()
+
+            # 4. Purge all cache entries for this dataset
+            clear_cache(f"dashboard:{dataset_id}:")
+            clear_cache(f"ai:{dataset_id}:")
+
+            print(f"[DELETE] Dataset {dataset_id} and all associated data removed.")
+            return jsonify({'success': True, 'message': 'Dataset deleted successfully'})
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Error deleting dataset {dataset_id}: {e}")
             return jsonify({'error': str(e)}), 500

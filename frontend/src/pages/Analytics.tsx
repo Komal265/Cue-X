@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, AreaChart, Area, Legend,
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
 } from 'recharts';
-import { ArrowLeft, Download, TrendingUp, Zap, Users, Target, MessageSquare, BarChart2, FileText, Sparkles } from 'lucide-react';
+import { ArrowLeft, Download, TrendingUp, Zap, Users, Target, MessageSquare, BarChart2, FileText, Sparkles, Trash2, AlertTriangle, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AppBackground } from '../components/ui/AppBackground';
 import { DataChat } from '../components/DataChat';
@@ -68,6 +68,10 @@ const Visualization = () => {
   const [strategies, setStrategies] = useState<Record<number, Strategy>>({});
   const [loadingSegments, setLoadingSegments] = useState<Set<number>>(new Set());
   const [expandedSegment, setExpandedSegment] = useState<number | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const navigate = useNavigate();
 
   const fetchStrategy = async (segmentId: number) => {
     setLoadingSegments(prev => new Set(prev).add(segmentId));
@@ -190,6 +194,29 @@ const Visualization = () => {
     }
   };
 
+  const handleDeleteDataset = async () => {
+    if (!dataset_id) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetchWithAuth(`/api/workspaces/dataset/${dataset_id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDeleteToast({ message: 'Dataset deleted successfully', type: 'success' });
+        setTimeout(() => navigate('/workspace'), 1500);
+      } else {
+        setShowDeleteModal(false);
+        setDeleteToast({ message: data.error || 'Failed to delete dataset', type: 'error' });
+        setTimeout(() => setDeleteToast(null), 4000);
+      }
+    } catch {
+      setShowDeleteModal(false);
+      setDeleteToast({ message: 'Failed to delete dataset', type: 'error' });
+      setTimeout(() => setDeleteToast(null), 4000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
@@ -214,6 +241,45 @@ const Visualization = () => {
   return (
     <div className="relative min-h-screen bg-black text-neutral-200 font-sans selection:bg-white/20 overflow-hidden">
       <AppBackground />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" aria-modal="true" role="dialog">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !isDeleting && setShowDeleteModal(false)} />
+          <div className="relative z-10 w-full max-w-md bg-neutral-900 border border-white/10 rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-white">Delete Dataset?</h2>
+                <p className="text-sm text-neutral-400 mt-1 leading-relaxed">
+                  This will permanently delete all customer data, segments, and analytics. This action cannot be undone.
+                </p>
+              </div>
+              <button onClick={() => !isDeleting && setShowDeleteModal(false)} className="ml-auto flex-shrink-0 text-neutral-600 hover:text-neutral-300 transition-colors" aria-label="Close">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button onClick={() => setShowDeleteModal(false)} disabled={isDeleting} className="px-4 py-2 rounded-lg text-sm font-medium text-neutral-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all disabled:opacity-50">Cancel</button>
+              <button onClick={handleDeleteDataset} disabled={isDeleting} className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-500 border border-red-500/50 transition-all disabled:opacity-60 flex items-center gap-2">
+                {isDeleting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {deleteToast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl border ${
+          deleteToast.type === 'success' ? 'bg-emerald-900/80 border-emerald-500/30 text-emerald-300' : 'bg-red-900/80 border-red-500/30 text-red-300'
+        }`}>
+          {deleteToast.message}
+        </div>
+      )}
       <div className="relative z-10 p-6 md:p-12">
 
         {/* Header */}
@@ -233,6 +299,13 @@ const Visualization = () => {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <LogoutButton />
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 text-sm font-medium flex items-center gap-2 transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Dataset
+            </button>
             <a href={`${API_URL}/download`} className="px-5 py-2.5 rounded-lg bg-white text-black hover:bg-neutral-200 transition-all font-medium text-sm flex items-center gap-2">
               <Download className="w-4 h-4" /> Export CSV
             </a>
