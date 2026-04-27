@@ -10,3 +10,5 @@ google-generativeai
 python-dotenv
 sqlalchemy
 psycopg2-binary
+APScheduler
+requests
