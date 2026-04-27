@@ -7,9 +7,23 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
-from config import RFM_MODEL_PATH, RFM_SCALER_PATH, RFM_MAP_PATH
 
 import os
+
+# --- Hardcoded Production Path Resolution ---
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_DIR = os.path.join(BASE_DIR, "models")
+
+print("[DEBUG] MODEL_DIR =", MODEL_DIR)
+if os.path.exists(MODEL_DIR):
+    print("[DEBUG] Files in models:", os.listdir(MODEL_DIR))
+else:
+    print("[DEBUG] Files in models: directory does not exist!")
+
+RFM_MODEL_PATH = os.path.join(MODEL_DIR, "rfm_kmeans_model.joblib")
+RFM_SCALER_PATH = os.path.join(MODEL_DIR, "rfm_scaler.joblib")
+RFM_MAP_PATH = os.path.join(MODEL_DIR, "rfm_segment_map.json")
+# ------------------------------------------
 
 def load_rfm_model():
     if not os.path.exists(RFM_MODEL_PATH):

@@ -28,8 +28,6 @@ class Settings:
     RFM_MODEL_PATH  = os.path.join(MODEL_DIR, "rfm_kmeans_model.joblib")
     RFM_SCALER_PATH = os.path.join(MODEL_DIR, "rfm_scaler.joblib")
     RFM_MAP_PATH    = os.path.join(MODEL_DIR, "rfm_segment_map.json")
-    KMEANS_PATH     = os.path.join(MODEL_DIR, "kmeans_model.joblib")
-    SCALER_PATH     = os.path.join(MODEL_DIR, "scaler.joblib")
 
     # ── Environment / Secrets ────────────────────────────────────────────────
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -94,8 +92,6 @@ MODEL_DIR                      = settings.MODEL_DIR
 RFM_MODEL_PATH                 = settings.RFM_MODEL_PATH
 RFM_SCALER_PATH                = settings.RFM_SCALER_PATH
 RFM_MAP_PATH                   = settings.RFM_MAP_PATH
-KMEANS_PATH                    = settings.KMEANS_PATH
-SCALER_PATH                    = settings.SCALER_PATH
 OPTIMIZER_ENABLED              = settings.OPTIMIZER_ENABLED
 OPTIMIZER_MIN_K                = settings.OPTIMIZER_MIN_K
 OPTIMIZER_MAX_K                = settings.OPTIMIZER_MAX_K
