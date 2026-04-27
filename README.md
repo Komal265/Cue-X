@@ -170,24 +170,35 @@ cd cue-x
 
 ### 2 · Backend Setup
 
-```bash
-# Create and activate virtual environment
-python -m venv venv
+Use a **virtual environment** so `python` and `pip` always refer to the same place (avoids “module not found” when your global Python differs from the project).
 
-# Windows
-venv\Scripts\activate
+```bash
+# Create virtual environment (repo root)
+python -m venv .venv
+
+# Windows (PowerShell) — activate
+.\.venv\Scripts\Activate.ps1
 
 # macOS / Linux
-source venv/bin/activate
+source .venv/bin/activate
 
-# Install dependencies
+# Install dependencies (run while the venv is active)
 pip install -r requirements.txt
 
-# Start the Flask server
+# Start the Flask server (same shell — still activated)
 python app.py
 ```
 
-> The API will be live at **`http://localhost:5000`**
+**Without activating:** you can always run the venv interpreter explicitly (same effect as `python app.py` after activation):
+
+```bash
+# Windows
+.\.venv\Scripts\python.exe app.py
+```
+
+> The API will be live at **`http://localhost:10000`** (see `app.py`).
+
+> **CORS:** the backend allows `http://localhost:5173` for the Vite dev server. Use that port or adjust `app.py` if you change the frontend port.
 
 ---
 
@@ -203,7 +214,7 @@ npm install
 npm run dev
 ```
 
-> The React app will be live at **`http://localhost:5174`**
+> The React app will be live at **`http://localhost:5173`** (Vite default unless you override `server.port`).
 
 ---
 

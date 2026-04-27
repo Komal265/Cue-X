@@ -18,6 +18,7 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
   const [isCreating, setIsCreating] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const fetchWorkspaces = async () => {
     try {
@@ -38,24 +39,33 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWorkspaceName.trim()) return;
-    
+
+    setCreateError(null);
     setIsLoading(true);
     try {
       const res = await fetchWithAuth('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newWorkspaceName })
+        body: JSON.stringify({ name: newWorkspaceName.trim() })
       });
-      const data = await res.json();
-      if (res.ok) {
+      let data: { error?: string; workspace_id?: number } = {};
+      try {
+        data = await res.json();
+      } catch {
+        setCreateError(`Request failed (${res.status}). Check that the API is running.`);
+        return;
+      }
+      if (res.ok && data.workspace_id != null) {
         setNewWorkspaceName('');
         setIsCreating(false);
         await fetchWorkspaces();
-        // The backend responds with { workspace_id: 123 }
         onWorkspaceSelect(data.workspace_id);
+      } else {
+        setCreateError(data.error || `Could not create workspace (${res.status}).`);
       }
     } catch (err) {
       console.error("Failed to create workspace", err);
+      setCreateError('Network error — check the browser console and that the API is reachable.');
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +87,11 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
       </div>
 
       {isCreating ? (
-        <form onSubmit={handleCreateWorkspace} className="flex gap-2 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <form onSubmit={handleCreateWorkspace} className="flex flex-col gap-2 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          {createError && (
+            <p className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-xl px-3 py-2">{createError}</p>
+          )}
+          <div className="flex gap-2 w-full">
           <input
             type="text"
             value={newWorkspaceName}
@@ -93,6 +107,7 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onWorkspac
           >
             {isLoading ? 'Creating...' : 'Create'}
           </button>
+          </div>
         </form>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

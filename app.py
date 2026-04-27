@@ -1,6 +1,5 @@
 from flask import Flask
 from flask_cors import CORS
-from config import PORT
 from routes.upload import upload_bp
 from routes.charts import charts_bp
 from routes.ai import ai_bp
@@ -11,7 +10,18 @@ from database import init_db
 def create_app():
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+    CORS(
+        app,
+        resources={
+            r"/*": {
+                "origins": [
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                ]
+            }
+        },
+        supports_credentials=True,
+    )
     app.register_blueprint(upload_bp)
     app.register_blueprint(charts_bp)
     app.register_blueprint(ai_bp)

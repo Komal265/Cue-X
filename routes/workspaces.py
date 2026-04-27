@@ -24,20 +24,20 @@ def get_workspaces_route(user_id):
 @login_required
 def create_workspace(user_id):
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         print("POST /api/workspaces", data)
-        name = data.get("name")
+        name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Name is required"}), 400
 
         with get_connection() as conn:
             if conn is None:
                 return jsonify({"error": "Database connection failed"}), 500
-            
+
             workspace_id = insert_workspace(conn, name, user_id)
             if not workspace_id:
+                conn.rollback()
                 return jsonify({"error": "Failed to create workspace"}), 500
-            conn.commit() # Ensure commit for non-autocommit engines
 
             return jsonify({"workspace_id": workspace_id})
     except Exception as e:

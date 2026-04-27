@@ -3,6 +3,8 @@ from flask import request, jsonify
 from functools import wraps
 from config import JWT_SECRET_KEY
 import logging
+from database import get_connection
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,17 @@ def login_required(f):
         user_id = get_current_user()
         if user_id is None:
             return jsonify({'error': 'Unauthorized. Please log in.'}), 401
+
+        # Guard against stale tokens that reference deleted/nonexistent users.
+        with get_connection() as conn:
+            if conn is None:
+                return jsonify({'error': 'Database connection failed'}), 500
+            user = conn.execute(
+                text("SELECT id FROM users WHERE id = :id"),
+                {"id": user_id},
+            ).fetchone()
+            if not user:
+                return jsonify({'error': 'Unauthorized. Please log in again.'}), 401
         
         # Inject user_id into the view function arguments
         return f(user_id=user_id, *args, **kwargs)

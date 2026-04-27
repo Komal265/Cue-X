@@ -3,14 +3,36 @@ import re
 import pandas as pd
 import numpy as np
 from flask import Blueprint, request, jsonify
-from services.session_store import load_session
 from services.gemini_service import gemini_client, gemini_generate
-from services.ml_service import rfm_segment_map
 
 from database import get_connection, text
 from utils.auth import login_required
 
 ai_bp = Blueprint('ai', __name__)
+
+
+def _campaign_for_segment(segment_name: str, avg_recency: float, avg_frequency: float, avg_monetary: float) -> str:
+    """
+    Build a campaign recommendation that works for dynamic segment labels too.
+    """
+    name = (segment_name or "").lower()
+    if "champion" in name:
+        return "VIP rewards, early access drops, and premium upsell bundles."
+    if "loyal" in name:
+        return "Membership tiers, referral incentives, and cross-sell bundles."
+    if "potential" in name or "promising" in name:
+        return "Nurture sequences and next-best-product recommendations."
+    if "risk" in name or "lost" in name or "attention" in name:
+        return "Win-back campaign with urgency, limited-time discount, and remarketing."
+
+    # Metric-driven fallback for unknown names.
+    if avg_recency > 120:
+        return "Urgent reactivation journey with 20-25% comeback incentives."
+    if avg_monetary > 1000:
+        return "Premium retention program with exclusives and concierge-style perks."
+    if avg_frequency > 5:
+        return "Loyalty ladder with spend-threshold rewards and bundles."
+    return "Standard engagement with personalized recommendations and seasonal nudges."
 
 def get_customers_df(dataset_id, user_id):
     """Helper to fetch customers from DB and return a DataFrame, ensuring ownership."""
@@ -348,10 +370,12 @@ def executive_summary(user_id, dataset_id):
                     'F': 0,
                     'M': 0,
                 },
-                'campaign': rfm_segment_map.get(
-                    str(per_customer[per_customer['Segment_Name'] == row['Segment_Name']]['Cluster'].iloc[0]),
-                    {}
-                ).get('Campaign_Strategy', ''),
+                'campaign': _campaign_for_segment(
+                    segment_name=row['Segment_Name'],
+                    avg_recency=float(row['AvgRecency']),
+                    avg_frequency=float(row['AvgFreq']),
+                    avg_monetary=float(row['AvgSpend']),
+                ),
             }
             segments.append(seg_info)
 

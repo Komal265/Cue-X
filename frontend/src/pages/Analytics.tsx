@@ -12,7 +12,7 @@ import { DataChat } from '../components/DataChat';
 import { ExecutiveSummary } from '../components/ExecutiveSummary';
 import { StrategyCard, StrategyDetail } from '../components/StrategyCard';
 import type { Strategy } from '../components/StrategyCard';
-import { getAuthHeaders } from '../utils/api';
+import { fetchWithAuth, getAuthHeaders } from '../utils/api';
 
 interface ChartData { labels: string[]; values: number[] }
 interface ScatterPoint { name: string; data: [number, number, string][] }
@@ -21,6 +21,25 @@ interface RFMScore {
   Segment_Name: string; Count: number;
   R_Score: number; F_Score: number; M_Score: number;
   Recency: number; Frequency: number; Monetary: number;
+}
+
+interface OptimizerCandidate {
+  model?: string;
+  params?: Record<string, unknown>;
+  composite_score?: number;
+  silhouette?: number | null;
+  guardrails_ok?: boolean;
+}
+
+interface OptimizerStatus {
+  status?: 'queued' | 'running' | 'done' | 'failed' | 'unknown';
+  dataset_id?: number;
+  recommend_upgrade?: boolean;
+  score_gain?: number;
+  winner?: OptimizerCandidate | null;
+  top_candidates?: OptimizerCandidate[];
+  recommendation_reason?: string;
+  error?: string;
 }
 
 const COLORS = ['#FFFFFF', '#A3A3A3', '#525252', '#3B82F6', '#10B981'];
@@ -72,26 +91,93 @@ const Visualization = () => {
   const [seasonalData, setSeasonalData] = useState<SeasonalData | null>(null);
   const [rfmScores, setRfmScores]       = useState<RFMScore[] | null>(null);
   const [isLoading, setIsLoading]       = useState(true);
+  const [optimizer, setOptimizer]       = useState<OptimizerStatus | null>(null);
+  const [optimizerApplyMsg, setOptimizerApplyMsg] = useState<string | null>(null);
+  const [isApplyingOptimizer, setIsApplyingOptimizer] = useState(false);
+  const [hasUpdatedResultsPendingLoad, setHasUpdatedResultsPendingLoad] = useState(false);
+
+  const loadAnalyticsData = async () => {
+    try {
+      const [segRes, spendRes, scatterRes, seasonalRes, rfmRes] = await Promise.all([
+        fetch(`${API_URL}/api/segment-counts/${dataset_id}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/spending-by-segment/${dataset_id}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/recency-value-scatter/${dataset_id}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/seasonal-distribution/${dataset_id}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/rfm-scores/${dataset_id}`, { headers: getAuthHeaders() }),
+      ]);
+      if (segRes.ok)      setSegmentData(await segRes.json());
+      if (spendRes.ok)    setSpendingData(await spendRes.json());
+      if (scatterRes.ok)  setScatterData(await scatterRes.json());
+      if (seasonalRes.ok) setSeasonalData(await seasonalRes.json());
+      if (rfmRes.ok)      setRfmScores(await rfmRes.json());
+    } catch (err) {
+      console.error('Fetch error', err);
+    }
+  };
 
   useEffect(() => {
     (async () => {
       try {
-        const [segRes, spendRes, scatterRes, seasonalRes, rfmRes] = await Promise.all([
-          fetch(`${API_URL}/api/segment-counts/${dataset_id}`, { headers: getAuthHeaders() }),
-          fetch(`${API_URL}/api/spending-by-segment/${dataset_id}`, { headers: getAuthHeaders() }),
-          fetch(`${API_URL}/api/recency-value-scatter/${dataset_id}`, { headers: getAuthHeaders() }),
-          fetch(`${API_URL}/api/seasonal-distribution/${dataset_id}`, { headers: getAuthHeaders() }),
-          fetch(`${API_URL}/api/rfm-scores/${dataset_id}`, { headers: getAuthHeaders() }),
-        ]);
-        if (segRes.ok)      setSegmentData(await segRes.json());
-        if (spendRes.ok)    setSpendingData(await spendRes.json());
-        if (scatterRes.ok)  setScatterData(await scatterRes.json());
-        if (seasonalRes.ok) setSeasonalData(await seasonalRes.json());
-        if (rfmRes.ok)      setRfmScores(await rfmRes.json());
+        await loadAnalyticsData();
       } catch (err) { console.error('Fetch error', err); }
       finally { setIsLoading(false); }
     })();
   }, [dataset_id, API_URL]);
+
+  useEffect(() => {
+    if (!dataset_id) return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const pollOptimizer = async () => {
+      try {
+        const res = await fetchWithAuth(`/api/model-optimizer/status/${dataset_id}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as OptimizerStatus;
+        if (cancelled) return;
+        setOptimizer(data);
+
+        const status = data.status;
+        if (status === 'queued' || status === 'running') {
+          timer = window.setTimeout(pollOptimizer, 4000);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Optimizer status poll failed', err);
+        }
+      }
+    };
+
+    pollOptimizer();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [dataset_id]);
+
+  const handleApplyOptimizer = async () => {
+    if (!dataset_id) return;
+    setOptimizerApplyMsg(null);
+    setIsApplyingOptimizer(true);
+    try {
+      const res = await fetchWithAuth(`/api/model-optimizer/apply/${dataset_id}`, { method: 'POST' });
+      const data = await res.json();
+      setOptimizerApplyMsg(data?.message || 'Optimizer response received.');
+      if (res.ok && data?.applied) {
+        setHasUpdatedResultsPendingLoad(true);
+      }
+      // Refresh status after apply action.
+      const s = await fetchWithAuth(`/api/model-optimizer/status/${dataset_id}`);
+      if (s.ok) {
+        setOptimizer(await s.json());
+      }
+    } catch (err) {
+      console.error('Apply optimizer failed', err);
+      setOptimizerApplyMsg('Failed to apply optimizer recommendation.');
+    } finally {
+      setIsApplyingOptimizer(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -114,7 +200,6 @@ const Visualization = () => {
 
   const totalCustomers = pieData.reduce((a, b) => a + b.value, 0);
   const avgSpend = barData.length ? barData.reduce((a, b) => a + b.value, 0) / barData.length : 0;
-
   return (
     <div className="relative min-h-screen bg-black text-neutral-200 font-sans selection:bg-white/20 overflow-hidden">
       <AppBackground />
@@ -160,6 +245,84 @@ const Visualization = () => {
             </motion.div>
           ))}
         </section>
+
+        {/* Optimizer Notification */}
+        {optimizer && (
+          <section className={`mb-8 rounded-2xl border p-4 md:p-5 ${
+            optimizer.status === 'failed'
+              ? 'border-red-900/60 bg-red-950/30'
+              : optimizer.recommend_upgrade
+              ? 'border-emerald-900/60 bg-emerald-950/25'
+              : 'border-white/10 bg-white/5'
+          }`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-neutral-500 mb-1">Model Optimizer</p>
+                {optimizer.status === 'queued' || optimizer.status === 'running' ? (
+                  <p className="text-sm text-neutral-300">
+                    Evaluating alternate models in background...
+                  </p>
+                ) : optimizer.status === 'failed' ? (
+                  <p className="text-sm text-red-300">
+                    Optimizer failed: {optimizer.error || 'Unknown error'}
+                  </p>
+                ) : optimizer.recommend_upgrade ? (
+                  <p className="text-sm text-emerald-300">
+                    Better model found ({optimizer.winner?.model ?? 'candidate'}) with
+                    {' '}+{(((optimizer.score_gain ?? 0) * 100)).toFixed(1)} score lift.
+                  </p>
+                ) : (
+                  <p className="text-sm text-neutral-300">
+                    Baseline segmentation remains best for this dataset.
+                  </p>
+                )}
+                {optimizer.status === 'done' && optimizer.winner && (
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Winner: {optimizer.winner.model ?? 'n/a'}
+                    {optimizer.winner.silhouette != null ? ` · silhouette ${optimizer.winner.silhouette.toFixed(3)}` : ''}
+                  </p>
+                )}
+                {optimizer.status === 'done' && optimizer.winner && (
+                  <div className="mt-3">
+                    <span className={`px-2 py-0.5 rounded-md border text-[11px] ${
+                      optimizer.recommend_upgrade
+                        ? 'border-emerald-700/50 text-emerald-300 bg-emerald-500/10'
+                        : 'border-neutral-700 text-neutral-300 bg-white/5'
+                    }`}>
+                      {optimizer.recommend_upgrade ? 'Recommendation available' : 'Baseline retained'}
+                    </span>
+                  </div>
+                )}
+                {optimizerApplyMsg && (
+                  <p className="text-xs text-neutral-400 mt-2">{optimizerApplyMsg}</p>
+                )}
+                {hasUpdatedResultsPendingLoad && (
+                  <button
+                    onClick={async () => {
+                      setIsLoading(true);
+                      await loadAnalyticsData();
+                      setIsLoading(false);
+                      setHasUpdatedResultsPendingLoad(false);
+                      setOptimizerApplyMsg('Updated results loaded.');
+                    }}
+                    className="mt-3 px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-white transition"
+                  >
+                    Load Updated Results
+                  </button>
+                )}
+              </div>
+              {optimizer.status === 'done' && optimizer.recommend_upgrade && (
+                <button
+                  onClick={handleApplyOptimizer}
+                  disabled={isApplyingOptimizer}
+                  className="px-4 py-2 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-700/50 hover:bg-emerald-500/25 transition disabled:opacity-60 text-sm font-medium"
+                >
+                  {isApplyingOptimizer ? 'Applying...' : 'Apply Recommendation'}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 mb-8 p-1 glass-card rounded-xl w-fit">
