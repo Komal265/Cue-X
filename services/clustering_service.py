@@ -10,28 +10,74 @@ Call run_clustering() from:
 """
 
 import logging
+import json
 import numpy as np
 import pandas as pd
 from datetime import datetime
 
+from config import OPTIMIZER_ENABLED
 from database import get_connection
 from models import (
     insert_dataset, insert_customers, insert_model_metadata,
     update_data_source_sync_time,
 )
-from services.ml_service import rfm_model, rfm_scaler, rfm_segment_map
+from services.ml_service import auto_cluster_rfm, rfm_segment_map
 
 logger = logging.getLogger(__name__)
 
 
-def _build_fallback_segment_map(cluster_ids):
-    return {
-        str(int(cid)): {
-            "Segment_Name": f"Segment {int(cid)}",
-            "Campaign_Strategy": "Standard engagement",
+def _build_archetype_segment_map(rfm_df: pd.DataFrame):
+    """
+    Build dynamic segment names from cluster behavior so labels remain meaningful
+    when auto-selected k is not the same as the static map size.
+    (Preserved from latest upload.py features)
+    """
+    if rfm_df.empty or "Cluster" not in rfm_df.columns:
+        return {}
+
+    cluster_profile = (
+        rfm_df.groupby("Cluster", as_index=False)
+        .agg(
+            Recency=("Recency", "mean"),
+            Frequency=("Frequency", "mean"),
+            Monetary=("Monetary", "mean"),
+        )
+        .copy()
+    )
+
+    # Higher score means stronger customer value:
+    # lower recency is better, higher frequency/monetary is better.
+    cluster_profile["recency_rank"] = cluster_profile["Recency"].rank(method="dense", ascending=True)
+    cluster_profile["frequency_rank"] = cluster_profile["Frequency"].rank(method="dense", ascending=True)
+    cluster_profile["monetary_rank"] = cluster_profile["Monetary"].rank(method="dense", ascending=True)
+    cluster_profile["composite"] = (
+        cluster_profile["frequency_rank"] + cluster_profile["monetary_rank"] - cluster_profile["recency_rank"]
+    )
+    cluster_profile = cluster_profile.sort_values("composite", ascending=False).reset_index(drop=True)
+
+    archetypes = [
+        ("Champions", "Reward loyalty with VIP perks and premium upsells."),
+        ("Loyal Customers", "Promote memberships, bundles, and referral incentives."),
+        ("Potential Loyalists", "Nurture with personalized recommendations and reminders."),
+        ("Promising", "Encourage second and third purchases with timed offers."),
+        ("Needs Attention", "Run re-engagement nudges and value-driven campaigns."),
+        ("At Risk", "Use win-back journeys with stronger urgency and incentives."),
+    ]
+
+    segment_map: dict[str, dict[str, str]] = {}
+    for idx, row in cluster_profile.iterrows():
+        cluster_id = str(int(row["Cluster"]))
+        if idx < len(archetypes):
+            name, strategy = archetypes[idx]
+        else:
+            name = f"Emerging Segment {idx - len(archetypes) + 1}"
+            strategy = "Explore targeted experiments to refine this segment's lifecycle strategy."
+        segment_map[cluster_id] = {
+            "Segment_Name": name,
+            "Campaign_Strategy": strategy,
         }
-        for cid in sorted(cluster_ids)
-    }
+
+    return segment_map
 
 
 def run_clustering(
@@ -43,23 +89,11 @@ def run_clustering(
 ) -> dict:
     """
     Execute the full RFM clustering pipeline on a pre-loaded DataFrame.
-
-    Parameters
-    ----------
-    df            : Raw pandas DataFrame (must contain customer_id, transaction_date, amount columns
-                    OR be already column-mapped by the caller via map_sales_columns).
-    workspace_id  : Owning workspace.
-    filename      : Logical name for the dataset record (e.g. CSV filename or sheet title).
-    source_id     : FK to data_sources (None for uncategorised manual upload).
-    ingestion_type: "manual" or "auto".
-
-    Returns
-    -------
-    dict with keys: dataset_id, total_customers, segments_found, column_mapping (if mapped here)
+    Supports auto-k selection and model optimizer queuing.
     """
     today = datetime.now()
 
-    # ── Step 1: RFM aggregation ───────────────────────────────────────────────
+    # ── Step 1: Cleaning ──────────────────────────────────────────────────────
     required_cols = {"customer_id", "transaction_date", "amount"}
     if not required_cols.issubset(set(df.columns)):
         missing = required_cols - set(df.columns)
@@ -73,6 +107,7 @@ def run_clustering(
     if df.empty:
         raise ValueError(f"No valid rows after cleaning (had {original_len} rows before).")
 
+    # ── Step 2: RFM Aggregation ───────────────────────────────────────────────
     agg_dict = {
         "Recency":   ("transaction_date", lambda x: (today - x.max()).days),
         "Frequency": ("transaction_date", "count"),
@@ -83,33 +118,33 @@ def run_clustering(
 
     rfm = df.groupby("customer_id").agg(**agg_dict).reset_index()
 
-    # ── Step 2: Scale & predict ───────────────────────────────────────────────
+    # ── Step 3: Auto-select k and Cluster ─────────────────────────────────────
     rfm_features = ["Recency", "Frequency", "Monetary"]
-    active_model   = rfm_model
-    active_scaler  = rfm_scaler
-    active_seg_map = rfm_segment_map
-
-    if active_scaler is None or active_model is None:
-        from sklearn.cluster import KMeans
-        from sklearn.preprocessing import StandardScaler
-
-        active_scaler = StandardScaler()
-        rfm_scaled = active_scaler.fit_transform(rfm[rfm_features])
-
-        n = len(rfm)
-        if n < 2:
-            rfm["Cluster"] = 0
-            active_seg_map = _build_fallback_segment_map([0])
-        else:
-            k = min(4, n)
-            active_model = KMeans(n_clusters=k, random_state=42, n_init=10)
-            rfm["Cluster"] = active_model.fit_predict(rfm_scaled)
-            active_seg_map = _build_fallback_segment_map(rfm["Cluster"].unique())
+    labels, active_scaler, active_model, clustering_diag = auto_cluster_rfm(
+        rfm_df=rfm,
+        feature_cols=rfm_features,
+        min_k=2,
+        max_k=10,
+        random_state=42,
+    )
+    rfm["Cluster"] = labels
+    selected_k = int(clustering_diag.get("selected_k", max(1, rfm["Cluster"].nunique())))
+    
+    # ── Step 4: Map cluster → segment name ────────────────────────────────────
+    map_keys = set(rfm_segment_map.keys())
+    if selected_k == len(map_keys) and map_keys == {str(i) for i in range(selected_k)}:
+        active_segment_map = rfm_segment_map
     else:
-        rfm_scaled = active_scaler.transform(rfm[rfm_features])
-        rfm["Cluster"] = active_model.predict(rfm_scaled)
+        active_segment_map = _build_archetype_segment_map(rfm)
 
-    # ── Step 3: RFM quintile scoring ──────────────────────────────────────────
+    rfm["Segment_Name"] = rfm["Cluster"].apply(
+        lambda c: active_segment_map.get(str(c), {}).get("Segment_Name", f"Segment {c}")
+    )
+    rfm["Campaign_Strategy"] = rfm["Cluster"].apply(
+        lambda c: active_segment_map.get(str(c), {}).get("Campaign_Strategy", "Standard engagement")
+    )
+
+    # ── Step 5: RFM quintile scoring (1-5) ────────────────────────────────────
     def score_quintile(series, ascending=True):
         pct = series.rank(method="average", pct=True, ascending=ascending)
         return np.ceil(pct * 5).clip(1, 5).astype(int)
@@ -119,25 +154,21 @@ def run_clustering(
     rfm["M_Score"] = score_quintile(rfm["Monetary"],  ascending=True)
     rfm["RFM_Score"] = rfm["R_Score"].astype(str) + rfm["F_Score"].astype(str) + rfm["M_Score"].astype(str)
 
-    # ── Step 4: Map cluster → segment name ────────────────────────────────────
-    rfm["Segment_Name"] = rfm["Cluster"].apply(
-        lambda c: active_seg_map.get(str(c), {}).get("Segment_Name", f"Segment {c}")
-    )
-    rfm["Campaign_Strategy"] = rfm["Cluster"].apply(
-        lambda c: active_seg_map.get(str(c), {}).get("Campaign_Strategy", "Standard engagement")
-    )
-
-    # ── Step 5: Silhouette score ──────────────────────────────────────────────
-    sil_score = None
-    try:
-        from sklearn.metrics import silhouette_score as sk_silhouette
-        if len(rfm) > 1 and rfm["Cluster"].nunique() > 1:
+    # ── Step 6: Silhouette score ──────────────────────────────────────────────
+    sil_score = clustering_diag.get("silhouette_score")
+    if sil_score is None and len(rfm) > 1 and rfm["Cluster"].nunique() > 1:
+        try:
+            from sklearn.metrics import silhouette_score as sk_silhouette
+            rfm_scaled = active_scaler.transform(rfm[rfm_features])
             sil_score = float(sk_silhouette(rfm_scaled, rfm["Cluster"]))
-    except Exception:
-        pass
+        except Exception:
+            pass
 
-    # ── Step 6: Persist to DB ─────────────────────────────────────────────────
+    # ── Step 7: Persist to DB ─────────────────────────────────────────────────
     dataset_id = None
+    optimizer_status = "disabled"
+    should_queue_optimizer = False
+    
     try:
         with get_connection() as conn:
             if conn is not None:
@@ -156,16 +187,35 @@ def run_clustering(
                         conn,
                         dataset_id=dataset_id,
                         model_name="kmeans",
-                        parameters=f"k={getattr(active_model, 'n_clusters', 1)}",
+                        parameters=(
+                            f'k={selected_k};selection={clustering_diag.get("selection_method")};'
+                            f'elbow_k={clustering_diag.get("elbow_k")}'
+                        ),
                         silhouette_score=sil_score,
                     )
                     if source_id:
                         update_data_source_sync_time(conn, source_id)
+                    
+                    if OPTIMIZER_ENABLED:
+                        optimizer_status = "queued"
+                        should_queue_optimizer = True
     except Exception as db_err:
         logger.warning(f"[Clustering] DB persistence error: {db_err}")
+
+    # Queue optimizer job if needed
+    if should_queue_optimizer and dataset_id:
+        try:
+            from routes.upload import _queue_optimizer_job
+            _queue_optimizer_job(dataset_id)
+        except Exception as opt_err:
+            logger.warning(f"[Clustering] Could not queue optimizer: {opt_err}")
 
     return {
         "dataset_id":      dataset_id,
         "total_customers": int(rfm["customer_id"].nunique()),
         "segments_found":  rfm["Segment_Name"].unique().tolist(),
+        "selected_k":        selected_k,
+        "optimizer_status":  optimizer_status,
+        "clustering_diag":   clustering_diag,
     }
+
