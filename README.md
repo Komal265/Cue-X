@@ -245,4 +245,8 @@ Segment Smarter · Market Sharper
 
 **🌐 [Try the Live Demo](https://cuex.vercel.app)**
 
+---
+🛠️ **Maintainer:** [CUE-X Team](https://github.com/Heisenberg-Xd)
+
 </div>
+
